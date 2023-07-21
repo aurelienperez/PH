@@ -1,0 +1,908 @@
+---
+title: "INSEE projections"
+subtitle: "Exercices de projection 2010-2016-2021"
+description: |
+  Exercices de projection 2010-2016-2021
+author:
+  - name: Aurelien Perez
+date: "`r Sys.Date()`"
+output: 
+  rmdformats::readthedown:
+    self_contained: true
+    thumbnails: true
+    lightbox: true
+    gallery: false
+    highlight: tango
+    code_folding: hide
+    use_bookdown: true
+
+# bibliography: references.bib 
+# csl: advances-in-statistical-climatology-meteorology-and-oceanography.csl
+link-citations: true
+linkcolor: red
+---
+
+Calcul de l'espérance de vie résiduelle à 60 ans chez les femmes à partir des projections de l'INSEE en 2021 et en 2016 selon 3 scénarios pour l'espérance de vie:
+
+-   Espérance de vie basse
+-   Espérance de vie centrale
+-   Espérance de vie haute
+
+[Tables 2021](https://www.insee.fr/fr/statistiques/5894085?sommaire=5760764)
+
+[Tables 2016](https://www.insee.fr/fr/statistiques/2518406?sommaire=2496793)
+
+[Tables 2010](https://www.insee.fr/fr/statistiques/2517966?sommaire=2020101)
+
+[Calcul quotient mortalité age révolu](https://www.insee.fr/fr/statistiques/6655536?sommaire=6543680#documentation-sommaire)
+
+```{r}
+library(readxl)
+library(tidyverse)
+library(highcharter)
+```
+
+```{r}
+knitr::opts_chunk$set(warning=FALSE)
+knitr::opts_chunk$set(message=FALSE)
+```
+
+```{r}
+#Thème pour tous les graphes
+set.seed(123)
+palette <- colorRampPalette(c("#A62454","#FA8F55","#FEE978","#80FF90","#80BEFF"))(7)
+mon_theme <- hc_theme_merge(hc_theme_google(),hc_theme(colors=palette))
+```
+
+```{r}
+espF60 <- read_excel("Classeur1.xlsx")
+```
+
+```{r}
+espF60 <- espF60 %>% pivot_longer(cols=-Annee,names_to = "scenario",values_to = "Esperance de vie")
+```
+
+```{r}
+highchart() %>% 
+  hc_add_series(espF60,"line",hcaes(x=Annee,y=`Esperance de vie`,group=scenario),marker=list(enabled=FALSE)) %>% 
+  hc_title(text="Espérance de vie résiduelle à 60 ans chez les femmes")%>% 
+  hc_add_theme(mon_theme)
+```
+
+Il y a une correction de 0.5 sur les tables de 2021 qui n'est pas présente dans les tables de 2016. On rajoute cette correction.
+
+```{r}
+espF60 <- espF60 %>% mutate(`Esperance de vie` =ifelse(scenario %in% c("2013_B","2013_C","2013_H"), `Esperance de vie` + 0.5,`Esperance de vie`)) 
+```
+
+```{r}
+highchart() %>% 
+  hc_add_series(espF60,"line",hcaes(x=Annee,y=`Esperance de vie`,group=scenario),marker=list(enabled=FALSE))  %>% 
+  hc_title(text="Espérance de vie résiduelle à 60 ans chez les femmes (+0.5)")%>% 
+  hc_add_theme(mon_theme)
+```
+
+On constate que le scénario haut de 2021 coincide avec le scénario central de 2016 et le scénario central de 2021 coincide avec le scénario bas de 2016.
+
+**Definitions:**
+
+Selon l'INSEE,
+
+**L'âge atteint** dans l'année est l'âge qu'une personne atteint au cours d'une année civile donnée. Il correspond à l'âge au 31 décembre de l'année. C'est également la différence entre une année donnée et l'année de naissance.
+
+**L'âge en années révolues** correspond au nombre d'années entières écoulées entre la date de naissance de la personne et la date de référence utilisée.
+
+**Exemple:**
+
+Par exemple, un individu né le 10 octobre 1925 décède le 18 avril 1999. Il a 74 ans en âge atteint dans l'année : 1999 - 1925 = 74. Mais il a 73 ans en années révolues : 18 avril 1999 - 10 octobre 1925 = 73 ans 6 mois et 8 jours.
+
+Ainsi, pour un individu ayant x ans en âge atteint dans l'année, si l'événement a eu lieu à la date d :
+
+-   l'individu ayant son anniversaire après la date d aura comme âge en années révolues (x-1) ;
+
+-   l'individu ayant son anniversaire à la date d ou avant aura comme âge en années révolues (x).
+
+Seule exception : l'événement a lieu le 31 décembre. À cette date, le classement par âge atteint dans l'année et par âge en années révolues sont identiques. Et au 1er janvier, l'âge atteint dans l'année est égal à l'âge en années révolues plus un.
+
+Pour le scénario haut de 2021, j'ai calculé $S_x$ le nombre de survivants à l'age révolu x à partir du quotient de mortalité à l'age atteint x pour 100 000 individus $q_x$ et la proportion de décès avant anniversaire $p_x$.
+
+$$
+S_0=100\text{ }000
+$$
+
+$$
+S_x=S_{x-1}(1-\frac{q_{x-1} \times(1-p_{x-1})+p_{x} \times q_{x}}{100\text{ }000})
+$$
+
+$$p_0=0$$
+
+$$
+S_x^*=S_{x-1}^*(1-\frac{q_{x-1}}{100\text{ }000})
+$$ \* est pour dire que c'est en age atteint.
+
+```{r}
+Haut2021F <- read_excel("Classeur1.xlsx", sheet = "Haut2021F", col_names = FALSE)
+colnames(Haut2021F) <- c("Age",1962:2070)
+```
+
+```{r}
+Haut2021F
+```
+
+```{r}
+Central2021F <- read_excel("Classeur1.xlsx", sheet = "Central2021F", col_names = FALSE)
+colnames(Central2021F) <- c("Age",1962:2070)
+```
+
+```{r}
+Bas2021F <- read_excel("Classeur1.xlsx", sheet = "Bas2021F", col_names = FALSE)
+colnames(Bas2021F) <- c("Age",1962:2070)
+```
+
+Ci-dessous une fonction qui permet de calculer l'espérance de vie résiduelle à l'age x selon la formule suivante:
+
+$$
+e_x=0.5+\frac{\sum_{i=x+1}^{120}S_i}{S_x}
+$$
+
+Cette fonction prend l'age x en argument et renvoie un dataframe avec l'espérance de vie résiduelle à l'age x par année calendaire.
+
+```{r}
+esp_x <- function(x,data){
+  data.frame(Annee=1962:2070,`Esperance de vie`=apply(data %>% select(-Age),2,function(y){sum(y[(x+1):length(y)])/y[x+1]+0.5}),row.names = NULL)
+}
+esp_x(60,Haut2021F)
+```
+
+```{r}
+df <- read_excel("Classeur1.xlsx", sheet = "Feuil1", col_names = FALSE)
+colnames(df) <- c("Age",1962:2070)
+```
+
+$$
+e_{xt}=0.5+\sum_{i=1}^{120-x} \prod_{k=0}^{i-1}(1-q_{x+k,t+k})
+$$
+
+```{r}
+df <- df %>% mutate_all(function(x) x/100000)
+df <- df %>% mutate(Age=Age*100000)
+```
+
+```{r}
+esp_xt <- function(x,t,data){
+  q <- data %>% filter(Age>=x) %>% select_if(colnames(data)>=as.character(t)) %>% select(-Age)
+  q <- diag(as.matrix(q))
+  q <- c(q,data %>% select(Age,"2070") %>% filter(Age>x+2070-t) %>% pull(-Age))
+  p <- 1-q
+  sum(cumprod(p)[1:(120-x)])+0.5
+  }
+```
+
+```{r}
+esp_xt(65,2022,df)
+```
+
+```{r}
+vesp <- Vectorize(esp_xt,c("x","t"))
+esp_xthautF <- data.frame(Annee=2013:2070,y=vesp(60,2013:2070,df))
+
+```
+
+```{r}
+highchart() %>% 
+  hc_add_series(esp_xthautF,"line",hcaes(x=Annee,y=y),marker=list(enabled=FALSE))  %>% 
+  hc_title(text="Espérance de vie résiduelle à 60 ans chez les femmes (+0.5)")%>% 
+  hc_add_theme(mon_theme)
+```
+
+## R
+
+A partir de la je ne travaille plus que sur les quotients de mortalité directement sur R.
+
+J'ai rassemblé dans une feuille Excel les quotients de mortalité des scénarios haut, central et bas des exercices 2021, 2016 et 2010.
+
+Et j'ai mis une colonne Table qui indique la table d'où proviennent les quotients de mortalité.
+
+### Qxt
+
+```{r}
+qxt <- read_excel("qx.xlsx", sheet = "Feuil1")
+colnames(qxt) <- c("Age",1962:2070,"Table")
+```
+
+```{r}
+qxt <- qxt %>% select(-Age) %>% mutate(across(as.character(1962:2070),~ifelse(grepl("2010",qxt$Table)|grepl("2016",qxt$Table),./10000,./100000))) %>% mutate(Age=qxt$Age,.before = "1962") 
+# qxt %>% glimpse 
+```
+
+### Sxt
+
+Je définis les $S_{xt}$ en age atteint par:
+
+$$
+S_{xt}=S_{x-1,t}(1-q_{x-1,t})
+$$
+
+```{r}
+# argument q correspond a qx pour une année t fixée
+def_S <- function(q){
+# Comme on rajoute une ligne 100 000 avant l'age 0, il faut s'assurer que S fasse la bonne taille
+S <- numeric(length=length(q)+length(unique(qxt$Table)))
+i=1
+j=1
+while (i<=length(q)+length(unique(qxt$Table))) {
+  #il faut aussi s'assurer que 100 000 soit placé au bon endroit
+  if (i %in% (seq(1,length(q)+length(unique(qxt$Table)),table(qxt$Table)[1])+0:(length(unique(qxt$Table))))){
+    S[i] <- 100000
+    i=i+1
+  }
+  else{
+    S[i] <- S[i-1] * (1 - q[j])
+    i=i+1
+    j=j+1
+  }
+}
+return(S)
+}
+```
+
+```{r}
+Sxt <- data.frame(matrix(NA,ncol=109,nrow=2196))
+colnames(Sxt) <- as.character(1962:2070)
+for (annee in as.character(1962:2070)){
+  Sxt[[annee]] <- def_S(qxt[[annee]])
+}
+```
+
+```{r}
+# On vérifie que la colonne Age est bien le vecteur 0:120 répété 12 fois
+unique(rep(0:120,18)==qxt$Age)
+```
+
+```{r}
+#On rajoute les ages et la table
+age <- rep(c(NA,0:120),18)
+Table <- rep(unique(qxt$Table),each=122)
+Sxt <- Sxt %>% mutate(Age=age,.before="1962") %>% mutate(Table=Table)
+```
+
+On fige la mortalité a partir de 2070.
+
+```{r}
+for (annee in 2071:2142){
+  Sxt[[as.character(annee)]] <- Sxt[["2070"]]
+}
+```
+
+### Sxg
+
+On définit $S_{xg}^{gen}$ par:
+
+$$
+S_{xg}^{gen}=S_{x,g+x}
+$$
+
+```{r}
+Sg <- data.frame(Age=filter(Sxt,Table=="F2021C")[["Age"]])
+for (g in 1962:2022){
+  Sg[[as.character(g)]][1] <- 100000
+  for (x in 0:120){
+    # x+2 a cause du décalage avec la ligne 100 000 dans Sxt
+    Sg[[as.character(g)]][x+2] <- filter(Sxt,Table=="F2021C",Age==x)[[as.character(g+x)]]
+  }
+}
+```
+
+```{r}
+library(xlsx)
+
+write.xlsx(Sg,                   
+           "C:/Users/aper/Documents/Sg.xls",                
+           sheetName = "Sheet1", 
+           col.names = TRUE,     
+           row.names = FALSE,     
+           append = FALSE,       
+           showNA = FALSE        
+           )      
+```
+
+```{r}
+esp_xg <- function(x,data){
+  data.frame(Génération=1962:2022,`Esperance de vie`=apply(data %>% select(-Age),2,function(y){sum(y[(x+2):length(y)])/y[x+2]+0.5}),row.names = NULL)
+}
+esp_xg(65,Sg)
+esp_x(65,Central2021F)
+```
+
+### Espérance de vie par génération
+
+Calcul de l'espérance de vie:
+
+$$
+e_x=\sum_{t=1}^{120-x} \text{ }_tp_x
+$$
+
+2 formules
+
+-   Comme $\text{ }_tp_x = \prod_{s=0}^{t-1} p_{x+s}$, on a:
+
+$$
+e_x = \sum_{t=1}^{120-x} \prod_{s=0}^{t-1} p_{x+s} = \sum_{t=1}^{120-x} \prod_{s=0}^{t-1}(1-q_{x+s})=(1-q_x)+(1-q_x)(1-q_{x+1})+\cdots
+$$
+
+-   Comme $\text{ }_tp_x=\frac{l_{x+t}}{l_x}$ , on a:
+
+$$
+e_x=\sum_{t=1}^{120-x}\frac{l_{x+t}}{l_x}=\frac{1}{l_x}\sum_{t=1}^{120-x}l_{x+t}=\frac{1}{l_x}\sum_{k=x+1}^{120}l_k
+$$
+
+pour l'espérance de vie résiduelle à l'age x par génération, on considère les quotients de mortalités sur la diagonale de la génération concernée:
+
+$$
+e_{xt}=\sum_{i=1}^{120-x} \prod_{k=0}^{i-1}(1-q_{x+k,t+k})
+$$
+
+```{r}
+esp_xt <- function(x,t,data){
+  q <- data  %>% filter(Age>=x) %>% select_if(colnames(data)>=as.character(t)) %>% select(-Age,-Table)
+  q <- diag(as.matrix(q))
+  
+  #on fige la mortalité a partir de 2070
+  if (grepl("2010",data$Table[1])){
+    q <- c(na.omit(q),data %>% select(Age,"2060") %>% filter(Age>x+2060-t) %>% pull(-Age))
+  }
+  else{
+  q <- c(q,data %>% select(Age,"2070") %>% filter(Age>x+2070-t) %>% pull(-Age))
+  }
+
+  p <- 1-q
+  # sum(cumprod(p)[1:(120-x)])+0.5
+  sum(cumprod(p)[1:(120-x)])
+}
+vesp <- Vectorize(esp_xt,c("x","t"))
+# vesp(65,2022:2070,qxt %>% filter(Table=="F2021C"))
+# vesp(60,2022:2070,qxt %>% filter(Table=="F2010C"))
+```
+
+```{r}
+trace <- function(nom_table,L){
+  highchart() %>% 
+  # hc_add_series(esp_xg(L,Sg),"line",hcaes(x=`Génération`,y=`Esperance.de.vie`)) %>%
+  # hc_add_series(esp_x(L,Central2021F) %>% filter(Annee<=2022),"line",hcaes(x=`Annee`,y=`Esperance.de.vie`)) %>%
+  hc_add_series(tibble(x=2022:2060,y=vesp(L,2022:2060,qxt %>% filter(Table==nom_table))),"line",hcaes(x=x,y=y),name=nom_table)%>% 
+    hc_title(text=ifelse(L==0,"Espérance de vie à la naissance",paste0(paste0("Espérance de vie résiduelle à ",L)," ans"))) %>% 
+    hc_yAxis(title=list(text="Espérence de vie résiduelle")) %>% 
+    hc_xAxis(title=list(text="Année"))%>% 
+  hc_add_theme(mon_theme)
+}
+
+add <- function(hc,nom_table,L){
+  hc %>% 
+    hc_add_series(tibble(x=2022:2060,y=vesp(L,2022:2060,qxt %>% filter(Table==nom_table))),"line",hcaes(x=x,y=y),name=nom_table)%>% 
+    hc_title(text=ifelse(L==0,"Espérance de vie à la naissance",paste0(paste0("Espérance de vie résiduelle à ",L)," ans"))) %>% 
+    hc_yAxis(title=list(text="Espérence de vie résiduelle")) %>% 
+    hc_xAxis(title=list(text="Année")) %>% 
+    hc_tooltip(shared = TRUE)%>% 
+  hc_add_theme(mon_theme)
+}
+
+compare_exercice <- function(L,Sexe,Scenario){
+  trace(nom_table  = paste0(Sexe,"2021",Scenario),L=L) %>% add(nom_table  = paste0(Sexe,"2016",Scenario),L=L) %>% add(nom_table  = paste0(Sexe,"2010",Scenario),L=L) %>% hc_subtitle(text=ifelse(Sexe=="F","Femme","Homme"))%>% 
+  hc_add_theme(mon_theme)
+}
+```
+
+```{r}
+L <- 65
+trace(nom_table = "F2016C",L=L)
+```
+
+### Qxt age révolu
+
+![](images/Capture%20d%E2%80%99%C3%A9cran%202023-06-07%20161718.png)
+
+```{r}
+#argument S correspond au dataframe S, p1 proportion de décès à l’âge atteint x pendant l’année t ayant eu lieu avant l’âge révolu x, p2 proportion de décès à l’âge atteint x+1 pendant l’année t+1 ayant eu lieu avant l’âge révolu x+1
+def_qxt_rev <- function(S,annee,p1,p2){
+  S <- S[c(annee,as.character(as.numeric(annee)+1))]
+  
+q <- numeric(length=dim(S)[1])
+for (i in 1:dim(S)[1]) {
+  SA <- S[i,1]
+  SB <- S[i+1,1]
+  SC <- S[i+1,2]
+  SD <- S[i+2,2]
+  q[i] <- 1 - SB/(SA-p1[i]*(SB-SA))*(SC-p2[i]*(SC-SD))/SC
+} 
+return(q)
+}
+```
+
+```{r}
+p1 <-
+  c(
+    0.000000000000,
+    0.740101522843,
+    0.629427792916,
+    0.509505703422,
+    0.553191489362,
+    0.538888888889,
+    0.464285714286,
+    0.496183206107,
+    0.474137931034,
+    0.444444444444,
+    0.526315789474,
+    0.526315789474,
+    0.500000000000,
+    0.487012987013,
+    0.511764705882,
+    0.464601769912,
+    0.515384615385,
+    0.529411764706,
+    0.389776357827,
+    0.569060773481,
+    0.513513513514,
+    0.489156626506,
+    0.496103896104,
+    0.503856041131,
+    0.524940617577,
+    0.443661971831,
+    0.488262910798,
+    0.474945533769,
+    0.497991967871,
+    0.490848585691,
+    0.533742331288,
+    0.480127186010,
+    0.502754820937,
+    0.481879194631,
+    0.490453460621,
+    0.507150715072,
+    0.488416988417,
+    0.457216940363,
+    0.488391376451,
+    0.486306439674,
+    0.471539002108,
+    0.480731548008,
+    0.489988876529,
+    0.459048553212,
+    0.481450948063,
+    0.468411214953,
+    0.477137176938,
+    0.472910927456,
+    0.482362373063,
+    0.477267018337,
+    0.479972054029,
+    0.482530120482,
+    0.490017445241,
+    0.487211367673,
+    0.488483053636,
+    0.482962289868,
+    0.484693877551,
+    0.488256134366,
+    0.496946005375,
+    0.479104818452,
+    0.482579688658,
+    0.483977568596,
+    0.478747846065,
+    0.479854809437,
+    0.483097988875,
+    0.479178190439,
+    0.479672375279,
+    0.478119015533,
+    0.484715284715,
+    0.484924623116,
+    0.486158745713,
+    0.481291799723,
+    0.483529551671,
+    0.486739284869,
+    0.485563660884,
+    0.481435363369,
+    0.481975754998,
+    0.478764665956,
+    0.482761619060,
+    0.480706344016,
+    0.477014566350,
+    0.475197444316,
+    0.482555360841,
+    0.480255859513,
+    0.483483042310,
+   0.486329184991,
+   0.486482300504,
+   0.490248939759,
+    0.495835258005,
+   0.496259921201,
+    0.501631456697,
+    0.507813145928,
+    0.515991740761,
+    0.512352137646,
+    0.519553503883,
+    0.527367448114,
+    0.537299221725,
+    0.552510550806,
+    0.557417064241,
+    0.569179415855,
+    0.557379838367,
+    0.550373723550,
+    0.554029432376,
+    0.565225323846,
+    0.569792221630,
+    0.610011641444,
+    0.597693351425,
+    0.606622516556,
+    0.625310173697,
+    0.607296137339,
+    0.607296137339,
+    0.607296137339,
+    0.607296137339,
+    0.607296137339,
+    0.607296137339,
+    0.607296137339,
+    0.607296137339,
+    0.607296137339,
+    0.607296137339,
+    0.607296137339,
+    0.607296137339
+  )
+p2 <- lead(p1)
+qxt_rev <- data.frame(matrix(NA,ncol=108,nrow=2196))
+colnames(qxt_rev) <- as.character(1962:2069)
+for (annee in as.character(1962:2069)){
+  qxt_rev[[annee]] <- def_qxt_rev(Sxt,annee,p1,p2)
+}
+```
+
+```{r}
+qxt_rev <- qxt_rev %>% mutate(Age=age,.before="1962") %>% mutate(Table=Table)
+```
+
+## Comparaison exercices 2010/2016/2021
+
+```{r}
+#scénario central
+Ls <- c(0,65,75,85,95)
+for (L in Ls){
+print(
+  
+compare_exercice(L,"F","C")
+
+)
+}
+```
+
+\
+
+```{r}
+#scénario central
+Ls <- c(0,65,75,85,95)
+for (L in Ls){
+print(
+  
+compare_exercice(L,"H","C")
+
+)
+}
+```
+
+```{r}
+#scénario bas
+Ls <- c(0,65,75,85,95)
+for (L in Ls){
+print(
+  
+compare_exercice(L,"H","B")
+
+)
+}
+```
+
+```{r}
+#scénario haut
+Ls <- c(0,65,75,85,95)
+for (L in Ls){
+print(
+  
+compare_exercice(L,"H","H")
+
+)
+}
+```
+
+\
+
+```{r}
+qx_level <- function(nom_table){
+  
+  nbcol <- 30
+  breakpoints <- seq(0, 0.6, length.out = nbcol+1)
+  colormap <- colorRampPalette(c("white", "blue"))(nbcol)
+  
+  
+  
+  
+  qxt %>% filter(Table==nom_table) %>% select(-as.character(2060:2070)) %>% select(-Table,-Age) %>% as.matrix() %>% t() %>% lattice::levelplot(col.regions = colormap, xlab = "Année de naissance", ylab = "Age", at = breakpoints,scales=list(x=list(at=seq(1,38,by=15))))
+}
+
+qx_level("F2010C")
+qx_level("F2016C")
+qx_level("F2021C")
+
+```
+
+## Evolution qx par an
+
+```{r}
+qxt <- qxt %>% select(-as.character(1962:2021))
+```
+
+\
+
+```{r}
+def_qxg <- function(nom_table,gmin=1920,gmax=2022,amin=0,amax=120){
+  qxg <- matrix(numeric(0),nrow=amax-amin+1,ncol=gmax-gmin+1)
+  qxg <- data.frame(qxg)
+  colnames(qxg) <- as.character(gmin:gmax)
+  qxg <- qxg %>% mutate(Age=filter(qxt,Table==nom_table)[["Age"]],.before=as.character(gmin))
+qxt_filtre <- filter(qxt, Table == nom_table)
+  for (g in gmin:gmax){
+    for (x in amin:amax){
+      aj <- filter(qxt_filtre, Age == x)[[as.character(g + x)]]
+      qxg[[as.character(g)]][x + 1] <-
+
+        ifelse(
+          is.null(aj)
+               , NA
+          , aj
+          )
+    }
+  }
+  return(qxg)
+}
+
+
+
+```
+
+```{r}
+for (t in unique(qxt$Table)){
+  nam <- paste("qxg",t,sep="_")
+  assign(nam,def_qxg(t))
+}
+```
+
+\
+
+```{r}
+lev_plot_mom <- function(nom_table,gmin=2022,gmax=2060,amin=0,amax=120){
+    qxt_filtre <- qxt %>% filter(Table==nom_table) %>% select(-Table)
+  
+    Ta1 <- qxt_filtre %>% filter(amin<Age,Age<amax) %>% select(-Age) %>% select(as.character((gmin+1):gmax))
+    Ta2 <- qxt_filtre %>% filter(amin<Age,Age<amax) %>% select(-Age) %>% select(as.character((gmin+1):gmax-1))
+  aaa <-   (as.matrix(Ta1)-as.matrix(Ta2))/as.matrix(Ta2)
+    
+    nbcol <- 30
+  breakpoints <- seq(-0.05, 0.05, length.out = nbcol+1)
+  colormap <- colorRampPalette(c("blue", "white", "#A00000"))(nbcol)
+  
+  
+  
+  lattice::levelplot(t(aaa), col.regions = colormap, xlab = "Année", ylab = "Age", at = breakpoints,scales=list(x=list(at=seq(1,38,by=15))),main=paste("Table des",ifelse(substring(nom_table,1,1)=="H",'hommes',"femmes"),"/ Exercice",substring(nom_table,2,5)))
+}
+
+
+```
+
+\
+
+```{r}
+
+lev_plot_gen <- function(nom_table,gmin=1920,gmax=2022,amin=0,amax=120){
+    qxg <- get(paste("qxg",nom_table,sep="_"))
+  
+    Ta1 <- qxg %>% filter(amin<Age,Age<amax) %>% select(-Age) %>% select(as.character((gmin+1):gmax))
+    Ta2 <- qxg %>% filter(amin<Age,Age<amax) %>% select(-Age) %>% select(as.character((gmin+1):gmax-1))
+  aaa <-   (as.matrix(Ta1)-as.matrix(Ta2))/as.matrix(Ta2)
+    
+    nbcol <- 30
+  breakpoints <- seq(-0.05, 0.05, length.out = nbcol+1)
+  colormap <- colorRampPalette(c("blue", "white", "#A00000"))(nbcol)
+  
+  
+  
+  lattice::levelplot(t(aaa), col.regions = colormap, xlab = "Année de naissance", ylab = "Age", at = breakpoints,scales=list(x=list(at=seq(1,100,by=19))),main=paste("Table des",ifelse(substring(nom_table,1,1)=="H",'hommes',"femmes"),"/ Exercice",substring(nom_table,2,5)))
+}
+
+
+
+
+
+```
+
+```{r}
+library(gridExtra)
+# grid.arrange(
+# lev_plot_mom("F2021C"),
+# lev_plot_mom("F2016C"),
+# lev_plot_mom("F2010C"),
+# lev_plot_mom("H2021C"),
+# lev_plot_mom("H2016C"),
+# lev_plot_mom("H2010C"),
+# lev_plot_gen("F2021C"),
+# lev_plot_gen("F2016C"),
+# lev_plot_gen("F2010C"),
+# lev_plot_gen("H2021C"),
+# lev_plot_gen("H2016C"),
+# lev_plot_gen("H2010C")
+# ,nrow=4)
+```
+
+```{r}
+lev_plot_mom("F2021C")
+lev_plot_mom("F2016C")
+lev_plot_mom("F2010C")
+lev_plot_mom("H2021C")
+lev_plot_mom("H2016C")
+lev_plot_mom("H2010C")
+
+
+```
+
+\
+
+```{r}
+trace_desc_mom <- function(nom_table,age,gmin=2022,gmax=2060,amin=0,amax=120){
+  qxt_filtre <- qxt %>% filter(Table==nom_table) %>% select(-Table)
+  highchart() %>% 
+  hc_add_series(tibble(x=gmin:gmax,y=as.matrix(qxt_filtre %>% filter(Age==age) %>% select(as.character(gmin:gmax)))[1,]),"line",hcaes(x=x,y=y),name=paste("Exercice",substring(nom_table,2,5))) %>%
+    hc_xAxis(title=list(text="Année")) %>% 
+    hc_yAxis(title=list(text=paste0("q",age))) %>% 
+    hc_tooltip(shared = TRUE) %>% hc_title(text=paste0("Quotients de mortalité pour l'age ",age)) %>% 
+    hc_subtitle(text=paste(ifelse(substring(nom_table,1,1)=="F","Femme |","Homme |")," Scénario",ifelse(substring(nom_table,6)=="C","central",ifelse(substring(nom_table,6)=="H","Haut","Bas"))))%>% 
+  hc_add_theme(mon_theme)
+}
+
+
+
+
+```
+
+```{r}
+trace_desc_mom("F2016C",100) 
+```
+
+```{r}
+trace_desc_mom("F2016C",90)
+```
+
+```{r}
+trace_desc_mom("F2021C",90)
+```
+
+```{r}
+  gmin=2022
+  gmax=2060
+  amin=0
+  amax=120
+  qxt_filtre <- qxt %>% filter(Table=="H2016C",Age<=20,Age>=0) %>% select(-Table)
+  qxt_filtre <- qxt_filtre %>% pivot_longer(cols=-Age,names_to = "Annee",values_to = "qx")
+  highchart() %>% 
+  hc_add_series(qxt_filtre,"line",hcaes(x=as.numeric(Annee),y=qx,group=as.factor(Age)),marker=list(enabled=FALSE)) %>%
+    hc_xAxis(title=list(text="Année")) %>% 
+    hc_yAxis(title=list(text="qx")) %>% 
+    hc_tooltip(shared = TRUE) %>% 
+    hc_title(text="Quotients de mortalité des hommes | Exercice 2010") %>% 
+    hc_subtitle(text="Entre 3 et 13 ans")%>% 
+  hc_add_theme(mon_theme)
+```
+
+\
+
+```{r}
+lev_plot_gen("F2021C")
+lev_plot_gen("F2016C")
+lev_plot_gen("F2010C")
+lev_plot_gen("H2021C")
+lev_plot_gen("H2016C")
+lev_plot_gen("H2010C")
+
+```
+
+Pour un age donnée, on observe le taux de décroissance des quotients de mortalité par année de naissance.
+
+```{r}
+trace_desc_gen <- function(nom_table,age,gmin=2022,gmax=2060,amin=0,amax=120){
+  qxg <- get(paste("qxg",nom_table,sep="_"))
+  highchart() %>% 
+  hc_add_series(tibble(x=gmin:gmax-age,y=as.matrix(qxg %>% filter(Age==age) %>% select(as.character(gmin:gmax-age)))[1,]),"line",hcaes(x=x,y=y),name=paste("Exercice",substring(nom_table,2,5))) %>%
+    hc_xAxis(title=list(text="Année de naissance")) %>% 
+    hc_yAxis(title=list(text=paste0("q",age))) %>% 
+    hc_tooltip(shared = TRUE) %>% hc_title(text=paste0("Quotients de mortalité pour l'age ",age)) %>% 
+    hc_subtitle(text=paste(ifelse(substring(nom_table,1,1)=="F","Femme |","Homme |")," Scénario",ifelse(substring(nom_table,6)=="C","central",ifelse(substring(nom_table,6)=="H","Haut","Bas"))))%>% 
+  hc_add_theme(mon_theme)
+}
+
+trace_desc_gen("H2016C",90)
+```
+
+```{r}
+  gmin=2022
+  gmax=2060
+  amin=0
+  amax=120
+  qxg_pivot <- qxg_F2016C %>% filter(Age<=92,Age>=90) %>% select(-as.character(c(1920:1930,1990:2022)))
+  qxg_pivot <- qxg_pivot %>% pivot_longer(cols=-Age,names_to = "Annee",values_to = "qx")
+  highchart() %>% 
+  hc_add_series(qxg_pivot,"line",hcaes(x=as.numeric(Annee),y=qx,group=as.factor(Age)),marker=list(enabled=FALSE)) %>%
+    hc_xAxis(title=list(text="Année")) %>% 
+    hc_yAxis(title=list(text="qx")) %>% 
+    hc_tooltip(shared = TRUE) %>% 
+    hc_title(text="Quotients de mortalité des femmes | Exercice 2016") %>% 
+    hc_subtitle(text="Entre 90 et 91 ans")%>% 
+  hc_add_theme(mon_theme)
+```
+
+## Differences qx entre tables
+
+```{r}
+comp_plot_mom <- function(T1,T2,gmin=2022,gmax=2060,amin=0,amax=120,int=3,nbcol=30){
+    qxt_1 <- qxt %>% filter(Table==T1) %>% select(-Table)
+    qxt_2 <- qxt %>% filter(Table==T2) %>% select(-Table)
+  
+    Ta1 <- qxt_1 %>% filter(amin<Age,Age<amax) %>% select(-Age) %>% select(as.character((gmin):gmax))
+    Ta2 <- qxt_2 %>% filter(amin<Age,Age<amax) %>% select(-Age) %>% select(as.character((gmin):gmax))
+  aaa <-   (as.matrix(Ta1)-as.matrix(Ta2))/as.matrix(Ta2)
+    
+
+  breakpoints <- seq(-int, int, length.out = nbcol+1)
+  colormap <- colorRampPalette(c("blue", "white", "#A00000"))(nbcol)
+  
+  
+  
+  lattice::levelplot(t(aaa), col.regions = colormap, xlab = "Année", ylab = "Age", at = breakpoints,scales=list(x=list(at=seq(1,38,by=15))),main=paste("Table des",ifelse(substring(T1,1,1)=="H",'hommes',"femmes"),"/ Exercice",substring(T1,2,5),"-",substring(T2,2,5)))
+}
+
+
+```
+
+```{r}
+comp_plot_gen <- function(T1,T2,gmin=1920,gmax=2022,amin=0,amax=120,int=3,nbcol=30){
+    qxg_1 <- get(paste("qxg",T1,sep="_"))
+    qxg_2 <- get(paste("qxg",T2,sep="_"))
+  
+    Ta1 <- qxg_1 %>% filter(amin<Age,Age<amax) %>% select(-Age) %>% select(as.character((gmin):gmax))
+    Ta2 <- qxg_2 %>% filter(amin<Age,Age<amax) %>% select(-Age) %>% select(as.character((gmin):gmax))
+  aaa <-   (as.matrix(Ta1)-as.matrix(Ta2))/as.matrix(Ta2)
+    
+
+  breakpoints <- seq(-int, int, length.out = nbcol+1)
+  colormap <- colorRampPalette(c("blue", "white", "#A00000"))(nbcol)
+  
+  
+  
+  lattice::levelplot(t(aaa), col.regions = colormap, xlab = "Année de naissance", ylab = "Age", at = breakpoints,scales=list(x=list(at=seq(1,100,by=19))),main=paste("Table des",ifelse(substring(T1,1,1)=="H",'hommes',"femmes"),"/ Exercice",substring(T1,2,5),"-",substring(T2,2,5)))
+}
+
+
+```
+
+```{r}
+comp_plot_mom("F2021C","F2016C")
+comp_plot_mom("F2016C","F2010C")
+comp_plot_mom("H2021C","H2016C")
+comp_plot_mom("H2016C","H2010C")
+comp_plot_gen("F2021C","F2016C")
+comp_plot_gen("F2016C","F2010C")
+comp_plot_gen("H2021C","H2016C")
+comp_plot_gen("H2016C","H2010C")
+```
+
+```{r}
+q1962 <- qxt %>% select(Age,"1962")
+```
+
+```{r}
+Sxt %>% filter(!is.na(Age))
+```
+
+```{r}
+
+```
