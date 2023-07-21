@@ -16,28 +16,8 @@ arma::vec Exit(const arma::mat& S){
 	return result;
 }
 
-// [[Rcpp::export]]
-arma::mat Van_loan(double x, arma::mat S, arma::rowvec alpha) {
-  int dimension = S.n_rows;
-  arma::vec s=Exit(S);
-  arma::mat s_alpha = s * alpha;
-  
-  arma::mat A = arma::join_rows(S, s_alpha);
-  arma::mat B = arma::join_rows(arma::zeros<arma::mat>(dimension, dimension), S);
-  arma::mat C = arma::join_cols(A, B);
-  
-  arma::mat result = arma::expmat(C * x);
-  
-  return result.submat(0, dimension, dimension - 1, 2 * dimension - 1);
-}
 
 
-
-// [[Rcpp::export]]
-arma::mat expm(const arma::mat& inputMatrix) {
-  arma::mat result = arma::expmat(inputMatrix);
-  return result;
-}
 
 //' Creates the matrix  (A1, B1 ; 0, A2)
 //' 
@@ -166,6 +146,24 @@ int find_n(double h, double lambda) {
 }
 
 // [[Rcpp::export]]
+arma::mat expSxUNI(const double x, const double m, const std::vector<arma::mat> aux_vect, const double a){
+	arma::mat J;
+	if (x * a <= 1.0) {
+      J = m_exp_sum(x, m, aux_vect, a);
+    }
+    else {
+      int n{};
+      n = std::log(a * x) / std::log(2.0);
+      ++n;
+      
+      J = m_exp_sum(x / pow(2.0, n), m, aux_vect, a);
+      
+      pow2_matrix(n, J);
+    }
+	return J;
+}
+
+// [[Rcpp::export]]
 Rcpp::List ABC(const arma::vec & alpha,const arma::mat & S, const Rcpp::NumericVector & obs, const Rcpp::NumericVector & weight) {
   unsigned p{S.n_rows}; 
 
@@ -191,34 +189,25 @@ Rcpp::List ABC(const arma::vec & alpha,const arma::mat & S, const Rcpp::NumericV
   
   double a = max_diagonal(J * (-1));
   
+  // Ca fait 8
   int m{find_n(0.00001, 1)};
+
   
   std::vector<arma::mat> aux_vect;
   
   vector_of_matrices(aux_vect, J, a, m);
   
-  double sum_weights{0.0};
+
   double density{0.0};
   
   // E-step
   // Uncensored data
   for (int k{0}; k < obs.size(); ++k) {
-    sum_weights += weight[k];
+
     
     double x{obs[k]};
     
-    if (x * a <= 1.0) {
-      J = m_exp_sum(x, m, aux_vect, a);
-    }
-    else {
-      int n{};
-      n = std::log(a * x) / std::log(2.0);
-      ++n;
-      
-      J = m_exp_sum(x / pow(2.0, n), m, aux_vect, a);
-      
-      pow2_matrix(n, J);
-    }
+    J = expSxUNI(x, m, aux_vect, a);
     
     for (int i{0}; i < p; ++i) {
       for (int j{0}; j < p; ++j) {
@@ -248,87 +237,6 @@ Rcpp::List ABC(const arma::vec & alpha,const arma::mat & S, const Rcpp::NumericV
   return result;
 }
 
-// [[Rcpp::export]]
-arma::rowvec denominateur(const Rcpp::List& expS, const arma::colvec& s, const arma::rowvec& alpha) {
-  int n=expS.size();
-  arma::rowvec result(n);
-  for (int i = 0; i < n; ++i) {
-      arma::mat matrix = Rcpp::as<arma::mat>(expS[i]);
-	  result[i] = arma::accu(alpha * matrix * s);
-  }
-
-  return result;
-}
-
-
-// [[Rcpp::export]]
-arma::rowvec A_EM(const arma::vec& alpha, const arma::vec& weight, const arma::colvec& s, const Rcpp::List& expS, const arma::vec& denom)
-{
-  int dimension = alpha.size();
-  arma::rowvec result(dimension);
-
-  for (int k = 0; k < dimension; ++k) {
-    double sum = 0.0;
-    for (int i = 0; i < expS.size(); ++i) {
-      arma::mat matrix = Rcpp::as<arma::mat>(expS[i]);
-	  arma::rowvec extractedRow = matrix.row(k);
-	  double dotprod = arma::dot(extractedRow , s);
-      sum += weight[i] * dotprod / denom[i];
-    }
-    result[k] = alpha[k] * sum;
-  }
-
-  return result;
-}
-
-// [[Rcpp::export]]
-arma::rowvec B_EM(const double& dimension, const Rcpp::List& Gy,const arma::vec& weight, const arma::vec& denom)
-{
-  arma::rowvec result(dimension);
-
-  for (int k = 0; k < dimension; ++k) {
-    double sum = 0.0;
-    for (int i = 0; i < Gy.size(); ++i) {
-      arma::mat matrix = Rcpp::as<arma::mat>(Gy[i]);
-	  double extractedDouble = matrix(k,k);
-      sum += weight[i] * extractedDouble / denom[i];
-    }
-    result[k] =  sum ;
-  }
-
-  return result;
-}
-
-// [[Rcpp::export]]
-arma::mat C_EM(const double& dimension,const arma::mat& S, const Rcpp::List& Gy,const arma::vec& weight, const arma::vec& denom,const arma::vec& s,const Rcpp::List& expS,const arma::rowvec& alpha)
-{
-  arma::mat result(dimension,dimension);
-
-  for (int k = 0; k < dimension; ++k) {
-	  for (int l = 0; l < dimension; ++l) {
-		  if (k!=l){
-			double sum = 0.0;
-			for (int i = 0; i < Gy.size(); ++i) {
-			  arma::mat matrix = Rcpp::as<arma::mat>(Gy[i]);
-			  double extractedDouble = matrix(l,k);
-			  sum += weight[i] * extractedDouble / denom[i];
-			}
-			result(l,k) = S(k,l) * sum ;}
-		  else{
-			double sum = 0.0;
-			for (int i = 0; i < Gy.size(); ++i) {
-			  arma::mat matrix = Rcpp::as<arma::mat>(expS[i]);
-			  arma::colvec extractedCol = matrix.col(k);
-			  double dotprod = arma::dot(alpha,extractedCol);
-			  sum += weight[i] * dotprod / denom[i];
-			}
-			result(l,k) = s(k) * sum ;}
-		  }
-  }
-  
-
-  return result;
-}
 
 
 
@@ -340,8 +248,14 @@ arma::mat C_EM(const double& dimension,const arma::mat& S, const Rcpp::List& Gy,
 arma::vec Densite(const arma::rowvec& alpha,const arma::mat& S,const arma::colvec& s,const arma::vec& y){
 	int n=y.n_elem;
 	arma::vec result(n);
+	
+	double a = max_diagonal(S * (-1));
+    int m{8};
+    std::vector<arma::mat> aux_vect;
+    vector_of_matrices(aux_vect, S, a, m);
+
 	for (int i; i<n;++i){
-		result(i) = arma::accu(alpha * arma::expmat(S*y(i)) * s);
+		result(i) = arma::accu(alpha *  expSxUNI(y(i), m, aux_vect, a) * s);
 	}
 	return result;
 }
@@ -350,8 +264,14 @@ arma::vec Densite(const arma::rowvec& alpha,const arma::mat& S,const arma::colve
 arma::vec Survie(const arma::rowvec& alpha,const arma::mat& S,const arma::vec& y){
 	int n=y.n_elem;
 	arma::vec result(n);
+
+	double a = max_diagonal(S * (-1));
+    int m{8};
+    std::vector<arma::mat> aux_vect;
+    vector_of_matrices(aux_vect, S, a, m);
+
 	for (int i; i<n;++i){
-		result(i) = arma::accu(alpha * arma::expmat(S*y(i)) );
+		result(i) = arma::accu(alpha * expSxUNI(y(i), m, aux_vect, a) );
 	}
 	return result;
 }
@@ -368,8 +288,14 @@ double invgGompertz(double t, double beta){
 arma::vec DensiteGompertz(const arma::rowvec& alpha,const arma::mat& S,const arma::colvec& s,const arma::vec& y,const double& beta){
 	int n=y.n_elem;
 	arma::vec result(n);
+
+	double a = max_diagonal(S * (-1));
+    int m{8};
+    std::vector<arma::mat> aux_vect;
+    vector_of_matrices(aux_vect, S, a, m);
+
 	for (int i; i<n;++i){
-		result(i) = lambdaGompertz(y(i),beta) * arma::accu(alpha * arma::expmat(S*invgGompertz(y(i),beta)) * s);
+		result(i) = lambdaGompertz(y(i),beta) * arma::accu(alpha * expSxUNI(invgGompertz(y(i),beta), m, aux_vect, a) * s);
 	}
 	return result;
 }
@@ -378,26 +304,32 @@ arma::vec DensiteGompertz(const arma::rowvec& alpha,const arma::mat& S,const arm
 arma::vec logDensiteGompertz(const arma::rowvec& alpha,const arma::mat& S,const arma::colvec& s,const arma::vec& y,const double& beta){
 	int n=y.n_elem;
 	arma::vec result(n);
+
+	double a = max_diagonal(S * (-1));
+    int m{8};
+    std::vector<arma::mat> aux_vect;
+    vector_of_matrices(aux_vect, S, a, m);
+
 	for (int i; i<n;++i){
-		result(i) = beta * y(i) + std::log(arma::accu(alpha * arma::expmat(S*invgGompertz(y(i),beta)) * s));
+		result(i) = beta * y(i) + std::log(arma::accu(alpha * expSxUNI(invgGompertz(y(i),beta), m, aux_vect, a) * s));
 	}
 	return result;
 }
 
-// [[Rcpp::export]]
-arma::mat babou(const arma::rowvec& alpha,const arma::mat& S,const arma::colvec& s,const arma::vec& y,const double& beta){
-	int n=y.n_elem;
-	arma::mat result = arma::expmat(S*invgGompertz(y(110),beta));
-	
-	return result;
-}
+
 
 // [[Rcpp::export]]
 arma::vec SurvieGompertz(const arma::rowvec& alpha,const arma::mat& S,const arma::vec& y,const double& beta){
 	int n=y.n_elem;
 	arma::vec result(n);
+
+	double a = max_diagonal(S * (-1));
+    int m{8};
+    std::vector<arma::mat> aux_vect;
+    vector_of_matrices(aux_vect, S, a, m);
+
 	for (int i; i<n;++i){
-		result(i) =  arma::accu(alpha * arma::expmat(S*invgGompertz(y(i),beta)) );
+		result(i) =  arma::accu(alpha * expSxUNI(invgGompertz(y(i),beta), m, aux_vect, a) );
 	}
 	return result;
 }
@@ -407,8 +339,31 @@ arma::vec DensiteGompertzs(const arma::rowvec& alpha,const arma::mat& S,const ar
 	int n=y.n_elem;
 	arma::vec s=Exit(S);
 	arma::vec result(n);
+
+	double a = max_diagonal(S * (-1));
+    int m{8};
+    std::vector<arma::mat> aux_vect;
+    vector_of_matrices(aux_vect, S, a, m);
+
 	for (int i; i<n;++i){
-		result(i) = mx(i) * lambdaGompertz(y(i),beta) * arma::accu(alpha * arma::expmat(mx(i) * S * invgGompertz(y(i),beta)) * s);
+		result(i) = mx(i) * lambdaGompertz(y(i),beta) * arma::accu(alpha * expSxUNI(mx(i) * invgGompertz(y(i),beta), m, aux_vect, a) * s);
+	}
+	return result;
+}
+
+// [[Rcpp::export]]
+arma::vec logDensiteGompertzs(const arma::rowvec& alpha,const arma::mat& S,const arma::vec& y,const double& beta, const arma::vec& mx){
+	int n=y.n_elem;
+	arma::vec s=Exit(S);
+	arma::vec result(n);
+
+	double a = max_diagonal(S * (-1));
+    int m{8};
+    std::vector<arma::mat> aux_vect;
+    vector_of_matrices(aux_vect, S, a, m);
+
+	for (int i; i<n;++i){
+		result(i) = mx(i) + y(i)*beta + std::log(arma::accu(alpha * expSxUNI(mx(i) * invgGompertz(y(i),beta), m, aux_vect, a) * s));
 	}
 	return result;
 }

@@ -83,55 +83,6 @@ surv <- function(x,y){
 EM_step <- function(x,y,weight,scale=1){
   y <- y/scale
   S <- x@pars$S
-  s <- exit(S)
-  alpha <- x@pars$alpha
-  
-  
-  ExpS <- function(y) expm(S*y)
-  
-  expS <- lapply(y,ExpS) 
-  
-  dimension <- length(alpha)
-  n <- length(y)
-  
-  #Pour le calcul de l'intégrale de l'exponentielle de matrice (Van Loan)
-  Gy <- lapply(y, Van_loan,S=S,alpha=alpha) 
-  
-  # Etape E
-  
-  denom <- c(denominateur(expS,s,alpha))
-  
-  A <- c(A_EM(alpha,weight,s,expS,denom))
-  
-  B <- c(B_EM(dimension,Gy,weight,denom))
-
-  C <- C_EM(dimension,S,Gy,weight,denom,s,expS,alpha)
-
-  #Etape M
-  alpha <- A/n
-  alpha <- alpha/sum(alpha) 
-  s <- diag(C)/B 
-  S <- apply(C,1,function(x) x/B)
-  if (dimension==1){
-    S <- matrix(-s)
-  }
-  else{
-    diag(S) <- 0
-    diag(S) <- -s+exit(S)
-  }
-  
-  if (class(x)=="PH"){
-    return(PH(alpha,S/scale))}
-  
-  else if(class(x)=="IPH"){
-    return(IPH(PH(alpha,S/scale),gfun=x@gfun$name,gfunpars = x@gfun$pars/scale))
-  }
-  
-}
-
-EM_step2 <- function(x,y,weight,scale=1){
-  y <- y/scale
-  S <- x@pars$S
   alpha <- x@pars$alpha
   
   
@@ -279,7 +230,7 @@ setMethod("fit",
               WY <- list(weights=weight,obs=y)
               cat(format(Sys.time(),'%H:%M:%S')," : Début de l'algorithme EM","\n")
               for (i in 1:stepsEM){
-                obj <- EM_step2(obj,y,weight)
+                obj <- EM_step(obj,y,weight)
                 obj@fit <- WY
                 
                 if (i %% every==0){
@@ -418,7 +369,6 @@ setMethod("dens",
             if (x@gfun$name=="gompertz"){
               c(DensiteGompertz(alpha,S,s,y,beta))
             }
-            # x@gfun$intensite(y,pars) * x@pars$alpha %*% expm(S* x@gfun$inverse(y,pars)) %*% exit(S)
           })
 
 setMethod("surv",
@@ -430,7 +380,6 @@ setMethod("surv",
             if (x@gfun$name=="gompertz"){
               SurvieGompertz(alpha,S,y,beta)
             }
-            # x@gfun$intensite(y,pars) * x@pars$alpha %*% expm(S* x@gfun$inverse(y,pars)) %*% exit(S)
           })
 
 setMethod("haz",
@@ -448,23 +397,9 @@ setMethod("fit",
             cat(format(Sys.time(),'%H:%M:%S')," : Début de l'algorithme EM","\n")
             for (i in 1:stepsEM){
               y_trans <- obj@gfun$inverse(y,obj@gfun$pars)
-              obj2 <- IPH(EM_step2(obj,y_trans,weight),gfunpars = obj@gfun$pars)
+              obj2 <- IPH(EM_step(obj,y_trans,weight),gfunpars = obj@gfun$pars)
               if (obj@gfun$name=="gompertz"){
-                # famaxi <- function(beta){
-                #   sum(weight*log(obj2@gfun$intensite(y,beta) *  sapply(y,function(x) obj2@pars$alpha %*% expm(obj2@pars$S* obj2@gfun$inverse(x,beta)) %*% exit(obj2@pars$S)))) }
-                # beta <- optim(obj@gfun$pars,famaxi,control = list(fnscale=-1,warn.1d.NelderMead=F))
-                if (i %in% c(350:351)){
-                  # print(scale(obj2,scale=scale))
-                  # print(list(beta=obj@gfun$pars,alpha=obj2@pars$alpha,S=obj2@pars$S,s=exit(obj2),weight=weights,y=y))
-                  # print(optim(par=obj@gfun$pars,fn=LL,alpha=obj2@pars$alpha,S=obj2@pars$S,s=exit(obj2),weight=weights,y=y,control = list(fnscale=-1,warn.1d.NelderMead=F)))
-                #   print(lapply(y,function(x) diag(Van_loan(x,obj2@pars$S,obj2@pars$alpha))))
-                #   print(lapply(y,function(x) all(diag(Van_loan(x,obj2@pars$S,obj2@pars$alpha))>=0)) %>% unlist %>% all)
-                 }
-                # beta <- optimise(famaxi,lower=1e-20,upper=2,maximum = T)
                 LL <- function(beta,alpha,S,s,y,weight){ 
-                  # print(beta)
-                  # print(babou(alpha,S,s,y,beta))
-                  # print(alpha)
                   sum(weight*c(logDensiteGompertz(alpha,S,s,y,beta)))}
                 beta <- optim(par=obj@gfun$pars,fn=LL,alpha=obj2@pars$alpha,S=obj2@pars$S,s=exit(obj2),weight=weights,y=y,control = list(fnscale=-1,warn.1d.NelderMead=F))
                 }
@@ -474,7 +409,6 @@ setMethod("fit",
               
               obj <- obj2
               obj@gfun$pars <- beta$par
-              # obj@gfun$pars <- c(beta=beta$maximum)
               obj@fit <- WY
 
               if (i %% every==0){
@@ -521,8 +455,15 @@ setMethod("reg",
                   sum(weight*log(c(DensiteGompertzs(alpha,S,y,beta,mx))))
                   
                 }
-                print(LL(c(obj@gfun$pars,obj@reg$pars),alpha=obj2@pars$alpha,S=obj2@pars$S,weight=weights,y=y))
-                beta <- optim(par=c(obj@gfun$pars,obj@reg$pars),fn=LL,alpha=obj2@pars$alpha,S=obj2@pars$S,weight=weights,y=y,control = list(fnscale=-1,warn.1d.NelderMead=F))
+                LL2 <- function(params,alpha,S,y,weight) {
+                  beta <- params[1]
+                  theta <- params[2:length(params)]
+                  mx <- X %*% theta
+                  sum(weight*c(logDensiteGompertzs(alpha,S,y,beta,mx)))
+                  
+                }
+                print(LL2(c(obj@gfun$pars,obj@reg$pars),alpha=obj2@pars$alpha,S=obj2@pars$S,weight=weights,y=y))
+                beta <- optim(par=c(obj@gfun$pars,obj@reg$pars),fn=LL2,alpha=obj2@pars$alpha,S=obj2@pars$S,weight=weights,y=y,control = list(fnscale=-1,warn.1d.NelderMead=F))
                 print(beta)
                 }
               
@@ -538,7 +479,7 @@ setMethod("reg",
               
               if (i %% every==0){
                 cat("\r",format(Sys.time(),'%H:%M:%S')," Etape",i," ")
-                cat("Log-Vraisemblance :",logLik(scale(obj,scale=scale)))}
+                cat("Log-Vraisemblance :",beta$value)}
               flush.console()
             }
             obj@fit[["loglik"]] <- logLik(scale(obj,scale=scale))
