@@ -55,7 +55,7 @@ random_structure <- function(dimension,structure){
     alpha <- runif(dimension)
     alpha <- alpha/sum(alpha)
     S <- matrix(runif(dimension^2),nrow=dimension,ncol=dimension)
-    diag(S) <- -((apply(S,1,function(x) sum(x)-diag(S)) %>% diag) + rexp(dimension,2))
+    diag(S) <- -((apply(S,1,function(x) sum(x)-diag(S)) %>% diag) + runif(dimension))
   }}
   
   
@@ -183,7 +183,7 @@ PH <- function (alpha = NULL, S = NULL, structure = NULL, dimension = 3)
 
 ###############################################################################################################################################################
 #Définition du constructeur de classe IPH
-setClass("IPH",slots = list(gfun="list",reg="list"),contains = "PH")
+setClass("IPH",slots = list(gfun="list"),contains = "PH")
 
 IPH <- function (PH=NULL, gfun="gompertz",gfunpars=c(beta=1)) 
 {
@@ -205,7 +205,15 @@ IPH <- function (PH=NULL, gfun="gompertz",gfunpars=c(beta=1))
   }
 }
 
+###############################################################################################################################################################
+#Définition du constructeur de classe SPH
+setClass("SPH",slots = list(reg="list"),contains = "IPH")
 
+SPH <- function(IPH=NULL,regpars=numeric(0)){
+  methods::new("SPH",reg=list(pars=regpars),name = paste(IPH@structure, " SPH(", length(IPH@pars$alpha), 
+                                                         ")", sep = ""), IPH)
+                                                                                                                                                                                                                                                                         
+}
 
 ###############################################################################################################################################################
 #Méthodes PH
@@ -306,21 +314,21 @@ setMethod("coef",
             object@pars
           })
 
-setMethod("pmle",
-          "PH",
-          function(x){
-              opt <- optim(par=c(coef(x)$alpha, (coef(x)$S)), fn=PMLE, method="Nelder-Mead", control=list(maxit = 5000, reltol = 1e-6,fnscale=-1))
-              q <- length(coef(x)$alpha)
-              alpha <- abs(opt$par[1:q])
-              S <- matrix(opt$par[(q+1):length(opt$par)],ncol=q)
-              piU <- alpha %*% solve(-S)
-              rew <- ifelse(piU/sum(piU)>=0.5/q,1,0)
-              res <- matrixdist::TVR(ph(alpha,S),rew)
-              res <- PH(res@pars$alpha,res@pars$S)
-              res@pars$alpha <- res@pars$alpha/sum(res@pars$alpha)
-              res@fit <- x@fit
-              return(res)
-              })
+# setMethod("pmle",
+#           "PH",
+#           function(x){
+#               opt <- optim(par=c(coef(x)$alpha, (coef(x)$S)), fn=PMLE, method="Nelder-Mead", control=list(maxit = 5000, reltol = 1e-6,fnscale=-1))
+#               q <- length(coef(x)$alpha)
+#               alpha <- abs(opt$par[1:q])
+#               S <- matrix(opt$par[(q+1):length(opt$par)],ncol=q)
+#               piU <- alpha %*% solve(-S)
+#               rew <- ifelse(piU/sum(piU)>=0.5/q,1,0)
+#               res <- matrixdist::TVR(ph(alpha,S),rew)
+#               res <- PH(res@pars$alpha,res@pars$S)
+#               res@pars$alpha <- res@pars$alpha/sum(res@pars$alpha)
+#               res@fit <- x@fit
+#               return(res)
+#               })
 
 setMethod("exit",
           "PH",
@@ -378,7 +386,7 @@ setMethod("surv",
             alpha <- x@pars$alpha
             beta <- x@gfun$pars
             if (x@gfun$name=="gompertz"){
-              SurvieGompertz(alpha,S,y,beta)
+              c(SurvieGompertz(alpha,S,y,beta))
             }
           })
 
@@ -413,11 +421,11 @@ setMethod("fit",
 
               if (i %% every==0){
                 cat("\r",format(Sys.time(),'%H:%M:%S')," Etape",i," ")
-                cat("Log-Vraisemblance :",beta$value)}
+                cat("Log-Vraisemblance :",logLik(scale(obj,scale=scale)))}
               flush.console()
             }
             obj@fit[["loglik"]] <- logLik(scale(obj,scale=scale))
-            cat("\n",format(Sys.time(),'%H:%M:%S')," : Fin de l'algorithme EM")
+            cat("\n",format(Sys.time(),'%H:%M:%S')," : Fin de l'algorithme EM","\n")
             obj <- scale(obj,scale=scale)
             return(obj)
           }
@@ -433,21 +441,15 @@ setMethod("reg",
           "IPH",
           function(object,formule,data,weight,stepsEM=500,every=10,scale=1){
             y <- data[[as.character(attr(terms(formule), which = "variables")[[2]])]]
-            obj <- object
             y <- y/scale
             X <- data %>% select(attr(terms(formule), which = "term.labels")) %>% as.matrix()
-            obj@reg$pars <- rep(1,dim(X)[2])
+            obj <- SPH(object,rep(1,dim(X)[2]))
             WY <- list(weights=weight,obs=y)
             cat(format(Sys.time(),'%H:%M:%S')," : Début de l'algorithme EM","\n")
             for (i in 1:stepsEM){
               y_trans <- obj@gfun$inverse(y,obj@gfun$pars)
-              obj2 <- IPH(EM_step(obj,y_trans,weight),gfunpars = obj@gfun$pars)
+              obj2 <- SPH(IPH(EM_step(obj,y_trans,weight),gfunpars = obj@gfun$pars))
               if (obj@gfun$name=="gompertz"){
-                # famaxi <- function(beta){
-                #   sum(weight*log(obj2@gfun$intensite(y,beta) *  sapply(y,function(x) obj2@pars$alpha %*% expm(obj2@pars$S* obj2@gfun$inverse(x,beta)) %*% exit(obj2@pars$S)))) }
-                # beta <- optim(obj@gfun$pars,famaxi,control = list(fnscale=-1,warn.1d.NelderMead=F))
-               
-                # beta <- optimise(famaxi,lower=1e-20,upper=2,maximum = T)
                 LL <- function(params,alpha,S,y,weight) {
                   beta <- params[1]
                   theta <- params[2:length(params)]
@@ -488,3 +490,36 @@ setMethod("reg",
             return(obj)
           })
 
+###############################################################################################################################################################
+#Méthodes SPH
+
+setMethod("show",
+          "SPH",
+          function(object) {
+            cat("Objet de la classe SPH.", "\n", "\n")
+            cat("Nom : Loi phase-type inhomogène",object@name, "\n", "\n")
+            cat("Paramètres :", "\n","@pars", "\n", "\n")
+            cat("Loi initiale", "\n", "$alpha", "\n", "\n",object@pars$alpha, "\n", "\n")
+            cat("Matrice d'intensité", "\n", "$S", "\n")
+            print(object@pars$S)
+            cat("Paramètres de la fonction g :", "\n","@gfun", "\n", "\n")
+            cat("Fonction d'intensité de type", object@gfun$name, "\n", "\n")
+            cat("Paramètres de g", "\n", "$pars", "\n")
+            print(object@gfun$pars)
+            cat("Paramètres de la régression", "\n","@reg","\n", "$pars", "\n")
+            print(object@reg$pars)
+          }
+)
+
+setMethod("scale",
+          "SPH",
+          function(x,scale){
+            obj <- x
+            obj@pars$S <- x@pars$S/scale
+            if (length(x@fit)>0){
+              obj@fit$obs <- x@fit$obs*scale
+            }
+            obj@gfun$pars <- x@gfun$pars/scale
+            obj@reg$pars <- x@reg$pars/scale
+            return(obj)
+          })

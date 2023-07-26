@@ -40,6 +40,7 @@ Calcul de l'espérance de vie résiduelle à 60 ans chez les femmes à partir de
 library(readxl)
 library(tidyverse)
 library(highcharter)
+library(webshot2)
 ```
 
 ```{r}
@@ -50,7 +51,7 @@ knitr::opts_chunk$set(message=FALSE)
 ```{r}
 #Thème pour tous les graphes
 set.seed(123)
-palette <- colorRampPalette(c("#A62454","#FA8F55","#FEE978","#80FF90","#80BEFF"))(7)
+palette <- colorRampPalette(c("#541388", "#d90368", "#f1e9da", "#2e294e", "#ffd400"))(10)
 mon_theme <- hc_theme_merge(hc_theme_google(),hc_theme(colors=palette))
 ```
 
@@ -314,6 +315,98 @@ esp_xg(65,Sg)
 esp_x(65,Central2021F)
 ```
 
+### Espérance de vie du moment
+
+```{r}
+qxt <- qxt %>% select(-as.character(1962:2021),-as.character(2061:2070))
+```
+
+```{r}
+esp_mom <- function(age,nom_table){
+  q <- qxt %>% filter(Table==nom_table,Age>=age) %>% select(-Table,-Age)
+  tibble(x=2022:2060,y=apply(q,2,function(x) {sum(cumprod(1-x))}),table=nom_table)
+}
+
+plot_esp_mom <- function(age,nom_tables){
+  hc <- highchart() %>% 
+    hc_title(text=ifelse(age!=0,paste("Espérance de vie résiduelle à l'âge",age),"Espérance de vie à la naissance")) %>% 
+    hc_add_series(esp_mom(age,nom_tables[1]),"line",hcaes(x=x,y=y),name=nom_tables[1],marker=list(enabled=F)) %>% 
+    hc_xAxis(title=list(text="Année")) %>% 
+    hc_yAxis(title=list(text="Espérance de vie"))
+  for (i in 2:length(nom_tables)){
+    hc <- hc %>% 
+      hc_add_series(esp_mom(age,nom_tables[i]),"line",hcaes(x=x,y=y),name=nom_tables[i],marker=list(enabled=F))
+  }
+  hc 
+}
+
+plot_esp_mom(0,c("F2021C","F2016C","F2021B","F2016B","F2021H","F2016H"))
+plot_esp_mom(0,c("H2021C","H2016C","H2021B","H2016B","H2021H","H2016H"))
+plot_esp_mom(65,c("F2021C","F2016C","F2021B","F2016B","F2021H","F2016H"))
+plot_esp_mom(65,c("H2021C","H2016C","H2021B","H2016B","H2021H","H2016H"))
+plot_esp_mom(85,c("F2021C","F2016C","F2021B","F2016B","F2021H","F2016H"))
+plot_esp_mom(85,c("H2021C","H2016C","H2021B","H2016B","H2021H","H2016H"))
+```
+
+```{r}
+listarg <- list(
+list(0,c("F2021C","F2016C","F2021B","F2016B","F2021H","F2016H")),
+list(0,c("H2021C","H2016C","H2021B","H2016B","H2021H","H2016H")),
+list(65,c("F2021C","F2016C","F2021B","F2016B","F2021H","F2016H")),
+list(65,c("H2021C","H2016C","H2021B","H2016B","H2021H","H2016H")),
+list(85,c("F2021C","F2016C","F2021B","F2016B","F2021H","F2016H")),
+list(85,c("H2021C","H2016C","H2021B","H2016B","H2021H","H2016H"))
+)
+
+nplots <- 6
+names <- paste0("esp_mom_",c("F0","H0","F65","H65","F85","H85"))
+
+for(i in 1:nplots) {
+    plot <- plot_esp_mom(listarg[[i]][[1]],listarg[[i]][[2]])
+    htmlwidgets::saveWidget(widget = plot, file = "~/plot.html")
+    webshot2::webshot(url = "C:/Users/aper/Documents/plot.html", file = paste0(names[i],".png"),delay = 3,vwidth = 1000,
+  vheight = 500)
+
+}
+
+
+
+
+
+```
+
+```{r}
+plot_esp_mom(0,c("F2016C","F2010C","F2016B","F2010B","F2016H","F2010H"))
+plot_esp_mom(0,c("H2016C","H2010C","H2016B","H2010B","H2016H","H2010H"))
+plot_esp_mom(65,c("F2016C","F2010C","F2016B","F2010B","F2016H","F2010H"))
+plot_esp_mom(65,c("H2016C","H2010C","H2016B","H2010B","H2016H","H2010H"))
+plot_esp_mom(85,c("F2016C","F2010C","F2016B","F2010B","F2016H","F2010H"))
+plot_esp_mom(85,c("H2016C","H2010C","H2016B","H2010B","H2016H","H2010H"))
+```
+
+```{r}
+listarg <- list(
+list(0,c("F2016C","F2010C","F2016B","F2010B","F2016H","F2010H")),
+list(0,c("H2016C","H2010C","H2016B","H2010B","H2016H","H2010H")),
+list(65,c("F2016C","F2010C","F2016B","F2010B","F2016H","F2010H")),
+list(65,c("H2016C","H2010C","H2016B","H2010B","H2016H","H2010H")),
+list(85,c("F2016C","F2010C","F2016B","F2010B","F2016H","F2010H")),
+list(85,c("H2016C","H2010C","H2016B","H2010B","H2016H","H2010H"))
+)
+
+nplots <- 6
+names <- paste0("esp_mom_",c("F0","H0","F65","H65","F85","H85"),"2")
+
+for(i in 1:nplots) {
+    plot <- plot_esp_mom(listarg[[i]][[1]],listarg[[i]][[2]])
+    htmlwidgets::saveWidget(widget = plot, file = "~/plot.html")
+    webshot2::webshot(url = "C:/Users/aper/Documents/plot.html", file = paste0(names[i],".png"),delay = 3,vwidth = 1000,
+  vheight = 500)
+
+}
+
+```
+
 ### Espérance de vie par génération
 
 Calcul de l'espérance de vie:
@@ -348,12 +441,12 @@ esp_xt <- function(x,t,data){
   q <- diag(as.matrix(q))
   
   #on fige la mortalité a partir de 2070
-  if (grepl("2010",data$Table[1])){
+  # if (grepl("2010",data$Table[1])){
     q <- c(na.omit(q),data %>% select(Age,"2060") %>% filter(Age>x+2060-t) %>% pull(-Age))
-  }
-  else{
-  q <- c(q,data %>% select(Age,"2070") %>% filter(Age>x+2070-t) %>% pull(-Age))
-  }
+  # }
+  # else{
+  # q <- c(q,data %>% select(Age,"2070") %>% filter(Age>x+2070-t) %>% pull(-Age))
+  # }
 
   p <- 1-q
   # sum(cumprod(p)[1:(120-x)])+0.5
@@ -369,26 +462,23 @@ trace <- function(nom_table,L){
   highchart() %>% 
   # hc_add_series(esp_xg(L,Sg),"line",hcaes(x=`Génération`,y=`Esperance.de.vie`)) %>%
   # hc_add_series(esp_x(L,Central2021F) %>% filter(Annee<=2022),"line",hcaes(x=`Annee`,y=`Esperance.de.vie`)) %>%
-  hc_add_series(tibble(x=2022:2060,y=vesp(L,2022:2060,qxt %>% filter(Table==nom_table))),"line",hcaes(x=x,y=y),name=nom_table)%>% 
+  hc_add_series(tibble(x=2022:2060-L,y=vesp(L,2022:2060,qxt %>% filter(Table==nom_table))),"line",hcaes(x=x,y=y),name=nom_table,marker=list(enabled=F))%>% 
     hc_title(text=ifelse(L==0,"Espérance de vie à la naissance",paste0(paste0("Espérance de vie résiduelle à ",L)," ans"))) %>% 
-    hc_yAxis(title=list(text="Espérence de vie résiduelle")) %>% 
-    hc_xAxis(title=list(text="Année"))%>% 
-  hc_add_theme(mon_theme)
+    hc_yAxis(title=list(text="Espérance de vie résiduelle")) %>% 
+    hc_xAxis(title=list(text="Génération"))
 }
 
 add <- function(hc,nom_table,L){
   hc %>% 
-    hc_add_series(tibble(x=2022:2060,y=vesp(L,2022:2060,qxt %>% filter(Table==nom_table))),"line",hcaes(x=x,y=y),name=nom_table)%>% 
+    hc_add_series(tibble(x=2022:2060-L,y=vesp(L,2022:2060,qxt %>% filter(Table==nom_table))),"line",hcaes(x=x,y=y),name=nom_table,marker=list(enabled=F))%>% 
     hc_title(text=ifelse(L==0,"Espérance de vie à la naissance",paste0(paste0("Espérance de vie résiduelle à ",L)," ans"))) %>% 
-    hc_yAxis(title=list(text="Espérence de vie résiduelle")) %>% 
-    hc_xAxis(title=list(text="Année")) %>% 
-    hc_tooltip(shared = TRUE)%>% 
-  hc_add_theme(mon_theme)
+    hc_yAxis(title=list(text="Espérance de vie résiduelle")) %>% 
+    hc_xAxis(title=list(text="Génération")) %>% 
+    hc_tooltip(shared = TRUE)
 }
 
 compare_exercice <- function(L,Sexe,Scenario){
-  trace(nom_table  = paste0(Sexe,"2021",Scenario),L=L) %>% add(nom_table  = paste0(Sexe,"2016",Scenario),L=L) %>% add(nom_table  = paste0(Sexe,"2010",Scenario),L=L) %>% hc_subtitle(text=ifelse(Sexe=="F","Femme","Homme"))%>% 
-  hc_add_theme(mon_theme)
+  trace(nom_table  = paste0(Sexe,"2021",Scenario),L=L) %>% add(nom_table  = paste0(Sexe,"2016",Scenario),L=L) %>% add(nom_table  = paste0(Sexe,"2010",Scenario),L=L) %>% hc_subtitle(text=ifelse(Sexe=="F","Femme","Homme"))
 }
 ```
 
@@ -570,6 +660,27 @@ compare_exercice(L,"F","C")
 ```
 
 \
+
+```{r}
+listarg <- list(
+list(65,"F"),
+list(65,"H"),
+list(85,"F"),
+list(85,"H")
+)
+
+nplots <- 4
+names <- paste0("esp_gen_",c("F65","H65","F85","H85"))
+
+for(i in 1:nplots) {
+    plot <- compare_exercice(listarg[[i]][[1]],listarg[[i]][[2]],"C")
+    htmlwidgets::saveWidget(widget = plot, file = "~/plot.html")
+    webshot2::webshot(url = "C:/Users/aper/Documents/plot.html", file = paste0(names[i],".png"),delay = 3,vwidth = 1000,
+  vheight = 500)
+
+}
+
+```
 
 ```{r}
 #scénario central
@@ -782,16 +893,15 @@ trace_desc_mom("F2021C",90)
   gmax=2060
   amin=0
   amax=120
-  qxt_filtre <- qxt %>% filter(Table=="H2016C",Age<=20,Age>=0) %>% select(-Table)
+  qxt_filtre <- qxt %>% filter(Table=="F2010C",Age<=13,Age>=3) %>% select(-Table)
   qxt_filtre <- qxt_filtre %>% pivot_longer(cols=-Age,names_to = "Annee",values_to = "qx")
   highchart() %>% 
   hc_add_series(qxt_filtre,"line",hcaes(x=as.numeric(Annee),y=qx,group=as.factor(Age)),marker=list(enabled=FALSE)) %>%
     hc_xAxis(title=list(text="Année")) %>% 
     hc_yAxis(title=list(text="qx")) %>% 
     hc_tooltip(shared = TRUE) %>% 
-    hc_title(text="Quotients de mortalité des hommes | Exercice 2010") %>% 
-    hc_subtitle(text="Entre 3 et 13 ans")%>% 
-  hc_add_theme(mon_theme)
+    hc_title(text="Quotients de mortalité des femmes | Exercice 2010") %>% 
+    hc_subtitle(text="Entre 3 et 13 ans")
 ```
 
 \
@@ -895,14 +1005,609 @@ comp_plot_gen("H2021C","H2016C")
 comp_plot_gen("H2016C","H2010C")
 ```
 
+### Ajustement loi phase-type table femme exercice 2021
+
+```{r,warning=FALSE,message=FALSE}
+source("C:/Users/aper/Documents/PH.R")
+```
+
+Il faut récupérer les données sous forme de durées de vie à la naissance. Cela revient à recupérer des nombres de décès par age. On prend un radix de 100 000 et on définit les lx par récurrence.
+
 ```{r}
-q1962 <- qxt %>% select(Age,"1962")
+quotients <- qxt %>% filter(Table=="F2021H") %>% select(-Table)
+lx_rec <- function(qx){
+  l <- vector("list",length(qx))
+  l[[1]] <- 100000
+  for (i in 1:(length(qx)-1)){
+    l[[i+1]] <- l[[i]]*(1-qx[i])
+  }
+  return(l %>% unlist)
+}
+lx <- quotients %>% select(-Age) %>% apply(2,FUN =lx_rec) %>% as_tibble %>% mutate(Age=0:120,.before = "2022")
 ```
 
 ```{r}
-Sxt %>% filter(!is.na(Age))
+dx <-  (lx-lead(lx)) %>%  mutate(Age=0:120) 
+dat <- lx %>% pivot_longer(cols=c(-Age),names_to = "Annee",values_to = "lx")
+dat <- dat %>% left_join(dx %>% pivot_longer(cols=c(-Age),names_to = "Annee",values_to = "dx"),by=c("Age","Annee"))
+dat <- dat %>% mutate(Annee=as.numeric(Annee))
+dat <- na.omit(dat)
+```
+
+On prend l'année 2022 pour voir.
+
+```{r}
+xmax <- 110
+donnees_ajust <- dat %>% filter(Annee==2022,Age<=xmax)
+donnees_ajust <- donnees_ajust %>% mutate(mux=-log(1-dx/lx))
 ```
 
 ```{r}
+plot(donnees_ajust$Age,donnees_ajust$dx)
+```
 
+On divise les données par un certain nombre "scale" afin d'éviter des problèmes de conditionnement de matrice qui empêchent de faire tourner l'algorithme ou le ralentissent fortement. Néanmoins, plus scale est haut et plus la qualité de l'ajustement est dégradée. Reste à savoir pourquoi tout ceci arrive.
+
+On a donc 3 hyperparamètres: le nombre de phases, le paramètre scale et le nombre d'itérations de l'algorithme EM.
+
+J'ai remarqué que pour avoir un ajustement visuellement satisfaisant, il vaut mieux faire peu d'itérations de l'algorithme EM pour ne pas s'enfermer dans un maximum local de vraisemblance. La minimisation de la fonction de cout fait bien le travail après.
+
+```{r}
+m <- 5
+set.seed(1)
+weights <- (donnees_ajust %>% pull(dx))/100000
+y <- (donnees_ajust %>% pull(Age)) + 0.5
+n <- 5
+x1 <- IPH(PH(structure = "coxienne généralisée" , dimension = m),gfun="gompertz",gfunpars = c(beta=1))
+x1@fit <- list(weights=weights,obs=y)
+x_fit1 <- fit(x1, y, weight=weights, stepsEM = 1000,every=1,scale=100)
+
+
+```
+
+\
+
+```{r}
+plot(x_fit1)
+plot(x_fit1,type="haz",f="log",hch=highchart() %>% 
+  hc_add_series(donnees_ajust,"scatter",hcaes(x=Age+0.5,y=log(mux)),name="Observé")
+) 
+```
+
+```{r}
+# loss <- function(x,beta){
+#   alpha <- x[1:m]
+#   # beta <- abs(x[(m+1)])
+#   if (m==1){
+#     # S <- matrix(x[m+2])
+#     S <- matrix(x[m+1])
+#   }
+#   else{
+#   # S <- diag(x[seq(m+2,2*m+1,1)])
+#   # S[cbind(1:(nrow(S)-1), 2:ncol(S))] <- x[(2*m+2):length(x)]
+#   S <- diag(x[seq(m+1,2*m,1)])
+#   S[cbind(1:(nrow(S)-1), 2:ncol(S))] <- x[(2*m+1):length(x)]
+#   }
+#   objiph <- IPH(PH(alpha,S),gfun="gompertz",gfunpars = beta)
+#   
+#   if (all(exit(S)>=0) & abs(sum(alpha)-1)<0.0001 & beta>0 & all((c(S)>=0)==c(diag(-1,m)>=0))){
+#     donnees_ajust %>% group_by(Age) %>% filter(mux!= Inf) %>% summarise(A=((log(haz(objiph,Age+0.5))-log(mux))^2)) %>% pull(A) %>%  sum
+# 
+#   }
+#   else{
+#   Inf
+#   }
+#   
+# }
+# 
+# alpha <- x_fit1@pars$alpha
+# beta <- x_fit1@gfun$pars
+# S <- x_fit1@pars$S
+# if (length(alpha)>1){
+#   loss(c(alpha,diag(S),S[cbind(1:(nrow(S)-1), 2:ncol(S))]),beta)
+# }else {
+#   loss(c(alpha,S),beta)
+# }
+```
+
+```{r}
+loss <- function(x,dimension){
+  
+  beta <- tail(x,1)
+  if (dimension==1){
+    alpha <- 1
+    S <- matrix(x[dimension])
+  }
+  else{
+    alpha <- c(x[1:(dimension-1)],1-sum(x[1:(dimension-1)]))
+    S <- diag(x[seq(dimension,2*dimension-1,1)])
+    S[cbind(1:(nrow(S)-1), 2:ncol(S))] <- x[(2*dimension):(length(x)-1)]
+  }
+  objiph <- IPH(PH(alpha,S),gfun="gompertz",gfunpars = beta)
+
+  
+
+  
+   L <- donnees_ajust %>% group_by(Age) %>% filter(mux!= Inf) %>% summarise(A=(log(haz(objiph,Age+0.5))-log(mux))^2) %>% pull(A) %>%  sum
+   
+  cat("\r",format(Sys.time(),'%H:%M:%S'))
+  cat(" Fonction de coût : ",L)
+  flush.console()
+  
+   
+  return(L)
+}
+
+alpha <- x_fit1@pars$alpha[1:(m-1)]
+beta <- x_fit1@gfun$pars
+S <- x_fit1@pars$S
+if (m>1){
+  loss(c(alpha,diag(S),S[cbind(1:(nrow(S)-1), 2:ncol(S))],beta),m)
+}else {
+  loss(c(S,beta),m)
+}
+```
+
+```{r}
+tdim <- 3*m-1
+nbeq <- 3*m
+if (m>1){
+A0 <- matrix(c(rep(-1,m-1),rep(0,tdim-(m-1))),nrow=1)
+A1 <- diag(-1,nrow=m-1,ncol=tdim)
+A2 <- cbind(matrix(0,nrow=m-1,ncol=m-1),diag(-1,m-1,m),diag(-1,m-1),matrix(0,nrow=m-1,ncol=1))
+A3 <- cbind(matrix(0,nrow=m,ncol=m-1),diag(-1,m),matrix(0,nrow=m,ncol=m-1),matrix(0,nrow=m,ncol=1))
+A4 <- matrix(c(rep(0,tdim-1),1),nrow=1)
+ui <- rbind(A0,-A1,A2,A3,A4)
+ci <- c(-1,rep(0,m-1),rep(0,m-1),rep(0,m),0)
+theta <- c(alpha,diag(S),ifelse(exit(S)[-m]==0,S[cbind(1:(nrow(S)-1), 2:ncol(S))]-1e-10,S[cbind(1:(nrow(S)-1), 2:ncol(S))]),beta)
+oppar <- constrOptim(theta=theta,f=loss,ui=ui,ci=ci,grad=NULL,control = list(maxit=1000),dimension=m)}else{
+  theta <- c(S,beta)
+  ui <- matrix(c(-1,0,0,1),byrow = T,ncol=2)
+  ci <- c(0,0)
+  oppar <- constrOptim(theta=theta,f=loss2,ui=ui,ci=ci,grad=NULL,control = list(maxit=5000),dimension=m)
+}
+oppar
+```
+
+```{r}
+# if (length(alpha)>1){
+#   
+# oppar <- optim(par = c(alpha,diag(S),S[cbind(1:(nrow(S)-1), 2:ncol(S))]),loss,control = list(maxit=5000,reltol=1e-8),beta=beta)
+# } else{
+#   oppar <- optim(par = c(alpha,S),loss,control = list(maxit=5000,reltol=1e-8),beta=beta)
+#   }
+# oppar$value
+```
+
+```{r}
+retpar <- function(x,m){
+      beta <- tail(x,1)
+     if (m==1){
+    S <- matrix(x[1])
+    alpha <- 1
+  }
+  else{
+  alpha <- x[1:(m-1)]
+  alpha <- c(alpha,1-sum(alpha))
+  S <- diag(x[seq(m,2*m-1,1)])
+  S[cbind(1:(nrow(S)-1), 2:ncol(S))] <- x[(2*m):(length(x)-1)]
+  }
+    return(list(alpha=alpha,beta=beta,S=S))
+}
+
+parlist <- retpar(oppar$par,m)
+```
+
+```{r}
+x10 <- IPH(PH(alpha = parlist$alpha,S=parlist$S),gfun="gompertz",gfunpars = parlist$beta)
+
+x10@fit$obs <- y
+
+plot(x10,type="haz",f="log",hch=highchart() %>% hc_add_series(donnees_ajust,"scatter",hcaes(x=Age+0.5,y=log(mux)),name="Observé"))  
+  
+```
+
+```{r}
+m <- 3
+x20 <- IPH(PH(alpha=c(0.75,0.25,0),S=matrix(c(-0.643,0.641,0,0,-1.757e-5,0,0,0,0),ncol=3,nrow=3,byrow = T)),gfun="gompertz",gfunpars =0.09270214 )
+
+plot(y,donnees_ajust$mux %>% log)
+curve(log(haz(x20,x)),col='red',add=T)
+
+alpha <- c(0.75,0.25)
+S <- matrix(c(-0.643,0.641,0,0,-1.757e-5,0,0,0,0),ncol=3,nrow=3,byrow = T)
+beta <- 0.09270214
+loss2(c(alpha,diag(S),S[cbind(1:(nrow(S)-1), 2:ncol(S))],beta))
+```
+
+\
+
+```{r}
+# library(matrixdist)
+# m <- 20
+# set.seed(1)
+# # x1 <- iph(ph(structure = "gcoxian" , dimension = m),gfun="gompertz")
+# x1 <- IPH(PH(structure = "coxienne généralisée" , dimension = m),gfun="gompertz")
+# x1 <- iph(ph(alpha = x1@pars$alpha,S=x1@pars$S),gfun="gompertz")
+# weights <- (donnees_ajust %>% pull(dx))/100000
+# y <- (donnees_ajust %>% pull(Age)) + 0.5
+# set.seed(1)
+# x_fit <- fit(x1, y/100, weight=weights, stepsEM = 1000,every=10,methods=c("PADE","PADE"))
+# # l1 <- 5
+# # l2 <- 20
+# # l <- vector("list",100)
+# # i=1
+# # while((l2-l1)/l1>0.01/100){
+# #   l1 <- logLik(x_fit1)
+# #   l[i] <- l1
+# #   i=i+1
+# #   if (i%%5==0){
+# #     l %>% unlist %>% plot()
+# #   }
+# #   x_fit1 <- fit(x_fit1, y/100, weight=weights, stepsEM = 10,every=1)
+# #   l2 <- logLik(x_fit1)
+# # }
+```
+
+```{r}
+# x_fit2 <- x_fit
+# x_fit2@pars$S <- coef(x_fit2)$S/100
+# x_fit2@gfun$pars <- x_fit2@gfun$pars/100
+# plot(donnees_ajust$Age,donnees_ajust$dx/100000)
+# curve(dens(x_fit2,x),col='red',add=T,xlim=c(0.1,110))
+```
+
+```{r}
+# donnees_ajust <- donnees_ajust %>% mutate(mux=-log(1-dx/lx))
+# plot(y,log(donnees_ajust$mux))
+# curve(log(haz(x_fit2,x)),add=T,col='red')
+```
+
+```{r}
+# df <- tibble(Age=y,obs=log(donnees_ajust$dx/donnees_ajust$lx))
+# 
+# highchart() %>% 
+#   hc_add_series(df,"scatter",hcaes(x=Age,y=obs)) %>% 
+#     hc_xAxis(title=list(text="Age")) %>% 
+#   hc_title(text="Logarithme des quotients de mortalité") %>%
+#   hc_subtitle(text="Table instantanée 2022 des femmes | Exercice de projection 2021") %>% 
+#   hc_legend(enabled=F) %>% 
+#   hc_tooltip(shared=T)
+```
+
+```{r}
+# loss <- function(x){
+#   alpha <- x[1:m]
+#   beta <- abs(x[(m+1)])
+#   S <- diag(x[seq(m+2,2*m+1,1)])
+#   S[cbind(1:(nrow(S)-1), 2:ncol(S))] <- x[(2*m+2):length(x)]
+#   IPH <- iph(ph(alpha,S),gfun="gompertz",gfun_pars = beta)
+#   
+#   if (all(apply(S,1,function(x) -sum(x))>=0) & abs(sum(alpha)-1)<0.0001 & all((c(S)>=0)==c(diag(-1,m)>=0))){
+#     donnees_ajust %>% group_by(Age) %>% filter(mux!= Inf) %>% summarise(A=((log(haz(IPH,Age+0.5))-log(mux))^2)) %>% pull(A) %>%  sum
+# 
+#   }
+#   else{
+#     Inf
+#   }
+#   
+# }
+# 
+# alpha <- x_fit2@pars$alpha
+# beta <- x_fit2@gfun$pars
+# S <- x_fit2@pars$S
+# loss(c(alpha,beta,diag(S),S[cbind(1:(nrow(S)-1), 2:ncol(S))]))
+```
+
+```{r}
+# oppar <- optim(par = c(alpha,beta,diag(S),S[cbind(1:(nrow(S)-1), 2:ncol(S))]),loss,control = list(maxit=5000,reltol=1e-8))
+# oppar$value
+```
+
+```{r}
+# retpar <- function(x){
+#       alpha <- x[1:m]
+#       beta <- abs(x[(m+1)])
+#       S <- diag(x[seq(m+2,2*m+1,1)])
+#       S[cbind(1:(nrow(S)-1), 2:ncol(S))] <- x[(2*m+2):length(x)]
+#     return(list(alpha=alpha,beta=beta,S=S))
+# }
+# 
+# parlist <- retpar(oppar$par)
+```
+
+```{r}
+# x10 <- iph(ph(alpha = parlist$alpha,S=parlist$S),gfun="gompertz",gfun_pars = parlist$beta)
+```
+
+```{r}
+# df <- tibble(Age=y,obs=log(donnees_ajust$mux),aj=log(haz(x10,y)))
+# 
+# highchart() %>% 
+#   hc_add_series(df,"scatter",hcaes(x=Age,y=obs),name="Observé") %>% 
+#   hc_add_series(df,"line",hcaes(x=Age,y=aj),name="Ajusté") %>%
+#     hc_xAxis(title=list(text="Age")) %>% 
+#   hc_title(text="Fonction de hasard") %>%
+#   hc_subtitle(text="Ajustement d'une loi IPH-Gompertz de dimension 17 | Structure coxienne généralisée | Après minimisation du carré de la somme du log-ratio des fonctions de hasard") %>% 
+#   hc_tooltip(shared=T)
+```
+
+```{r}
+# df <- tibble(Age=y,obs=(donnees_ajust$mux),aj=(haz(x10,y)))
+# 
+# highchart() %>% 
+#   hc_add_series(df,"scatter",hcaes(x=Age,y=obs),name="Observé") %>% 
+#   hc_add_series(df,"line",hcaes(x=Age,y=aj),name="Ajusté") %>%
+#     hc_xAxis(title=list(text="Age")) %>% 
+#   hc_title(text="Fonction de hasard") %>%
+#   hc_subtitle(text="Ajustement d'une loi IPH-Gompertz de dimension 20 | Structure coxienne généralisée | Après minimisation de la somme du carré des log-ratio des fonctions de hasard") %>% 
+#   hc_add_theme(mon_theme) %>% 
+#   hc_tooltip(shared=T)
+```
+
+```{r}
+# df <- tibble(Age=y,obs=log(quotients %>% pull("2022"))[1:(xmax+1)],aj=log(1-cdf(x10,y+1,lower.tail=FALSE)/cdf(x10,y,lower.tail=FALSE)))
+# 
+# highchart() %>% 
+#   hc_add_series(df,"scatter",hcaes(x=Age,y=obs),name="Observé") %>% 
+#   hc_add_series(df,"line",hcaes(x=Age,y=aj),name="Ajusté",marker=list(enabled=F)) %>%
+#     hc_xAxis(title=list(text="Age")) %>% 
+#   hc_title(text="Logarithme des quotients de mortalité") %>%
+#   hc_subtitle(text="Ajustement d'une loi IPH-Gompertz de dimension 17 | Structure coxienne généralisée | Après minimisation du carré de la somme du log-ratio des fonctions de hasard") %>% 
+#   hc_tooltip(shared=T)
+```
+
+```{r}
+# dist_etats <- function(x,phase){
+#    phase@pars$alpha %*% matrixdist:::expmat(phase@pars$S*phase@gfun$inverse(phase@gfun$pars,x))/sum(phase@pars$alpha %*% matrixdist:::expmat(phase@pars$S*phase@gfun$inverse(phase@gfun$pars,x)))
+# }
+# for (i in c(seq(0,110,10))){
+#   df <- tibble(x=1:m,y=dist_etats(i,xchoc2)[1,])
+# print(highchart() %>% 
+#   hc_add_series(df,"column",hcaes(x=x,y=y)) %>% 
+#     hc_title(text=paste("Distribution des états de la chaine de Markov à l'âge",i)) %>% 
+#     hc_xAxis(title=list(text="Etat de la chaine")) %>% 
+#     hc_legend(enabled=FALSE) %>% 
+#     hc_add_theme(mon_theme) )
+# }
+```
+
+## Fonction ajustement
+
+```{r}
+ajustement <- function(x,y,weight,stepsEM=1000,scale=100,maxit=1000,every=1){
+  
+  m <- length(x@pars$alpha)
+  
+  x_fit1 <- fit(x, y, weight=weight, stepsEM = stepsEM,every=every,scale=scale)
+  alpha <- x_fit1@pars$alpha[1:(m-1)]
+  beta <- x_fit1@gfun$pars
+  S <- x_fit1@pars$S
+  
+  tdim <- 3*m-1
+  nbeq <- 3*m
+  
+  if (m>1){
+  A0 <- matrix(c(rep(-1,m-1),rep(0,tdim-(m-1))),nrow=1)
+  A1 <- diag(-1,nrow=m-1,ncol=tdim)
+  A2 <- cbind(matrix(0,nrow=m-1,ncol=m-1),diag(-1,m-1,m),diag(-1,m-1),matrix(0,nrow=m-1,ncol=1))
+  A3 <- cbind(matrix(0,nrow=m,ncol=m-1),diag(-1,m),matrix(0,nrow=m,ncol=m-1),matrix(0,nrow=m,ncol=1))
+  A4 <- matrix(c(rep(0,tdim-1),1),nrow=1)
+  ui <- rbind(A0,-A1,A2,A3,A4)
+  ci <- c(-1,rep(0,m-1),rep(0,m-1),rep(0,m),0)
+  theta <- c(alpha,diag(S),ifelse(exit(S)[-m]==0,S[cbind(1:(nrow(S)-1), 2:ncol(S))]-1e-10,S[cbind(1:(nrow(S)-1), 2:ncol(S))]),beta)
+  oppar <- suppressWarnings(constrOptim(theta=theta,f=loss,ui=ui,ci=ci,grad=NULL,control = list(maxit=maxit),dimension=m))}else{
+    theta <- c(S,beta)
+    ui <- matrix(c(-1,0,0,1),byrow = T,ncol=2)
+    ci <- c(0,0)
+    oppar <- suppressWarnings(constrOptim(theta=theta,f=loss,ui=ui,ci=ci,grad=NULL,control = list(maxit=maxit),dimension=m))
+  }
+  
+  parlist <- retpar(oppar$par,m)
+  
+  x10 <- IPH(PH(alpha = parlist$alpha,S=parlist$S),gfun="gompertz",gfunpars = parlist$beta)
+
+  x10@fit$obs <- y
+
+  return(list(modele=x10,cout=oppar$value))
+}
+```
+
+```{r}
+m <- 4
+set.seed(1)
+weights <- (donnees_ajust %>% pull(dx))/100000
+y <- (donnees_ajust %>% pull(Age)) + 0.5
+x1 <- IPH(PH(structure = "coxienne généralisée" , dimension = m),gfun="gompertz",gfunpars = c(beta=1))
+ajust <- ajustement(x1, y, weight=weights, stepsEM = 20,every=1,scale=100,maxit=5000)
+```
+
+```{r}
+plot(ajust$modele,type="haz",f="log",hch=highchart() %>% hc_add_series(donnees_ajust,"scatter",hcaes(x=Age+0.5,y=log(mux)),name="Observé")) 
+```
+
+```{r}
+library(parallel)
+
+num_cores <- detectCores()
+
+
+cl <- makeCluster(num_cores)
+
+clusterExport(cl,list("y","weights","ajustement","loss","donnees_ajust","retpar"),envir = environment())
+clusterEvalQ(cl,source("C:/Users/aper/Documents/PH.R"))
+
+
+Ajustements <-  parLapply(cl, 1:20, function(k) {
+  x1 <- IPH(PH(structure = "coxienne généralisée" , dimension = k),gfun="gompertz",gfunpars = c(beta=1))
+aj <- ajustement(x1, y, weight=weights, stepsEM = 10000,every=1,scale=100)
+return(aj)
+})
+
+stopCluster(cl)
+
+```
+
+```{r}
+sapply(Ajustements,function(ajust) print(plot(ajust[[1]],type="haz",f="log",hch=highchart() %>% hc_add_series(donnees_ajust,"scatter",hcaes(x=Age+0.5,y=log(mux)),name="Observé"))) )
+
+
+```
+
+```{r}
+sapply(Ajustements,function(ajust) (ajust[[2]]))
+```
+
+\
+
+```{r}
+num_cores <- detectCores()
+
+
+cl <- makeCluster(num_cores)
+
+clusterExport(cl,list("y","weights","ajustement","loss","donnees_ajust","retpar"),envir = environment())
+clusterEvalQ(cl,source("C:/Users/aper/Documents/PH.R"))
+
+# vec <- c(1,seq(10,100,10),1000,2000)
+vec <- seq(1000,5000,500)
+
+Ajustements2 <-  parLapply(cl,vec , function(k) {
+  x1 <- IPH(PH(structure = "coxienne généralisée" , dimension = 10),gfun="gompertz",gfunpars = c(beta=1))
+aj <- ajustement(x1, y, weight=weights, stepsEM = k,every=1,scale=100)
+return(aj)
+})
+
+stopCluster(cl)
+```
+
+```{r}
+sapply(Ajustements2,function(ajust) print(plot(ajust[[1]],type="haz",f="log",hch=highchart() %>% hc_add_series(donnees_ajust,"scatter",hcaes(x=Age+0.5,y=log(mux)),name="Observé"))) )
+```
+
+```{r}
+sapply(Ajustements2,function(ajust) (ajust[[2]])) %>% plot
+```
+
+\
+\
+\
+
+```{r}
+
+library(GA)
+
+eval_func <- function(x) {
+
+  m <- binary2decimal(x[1:6]) 
+  stepsEM <- binary2decimal(x[7:9])
+  m <- case_when(m %in% 1:20 ~ m,
+                        .default = 1)
+   stepsEM <- case_when(stepsEM==0 ~ 1,
+                        stepsEM==1 ~ 10,
+                        stepsEM==2 ~ 50,
+                        stepsEM==3 ~ 100,
+                        stepsEM==4 ~ 200,
+                        stepsEM==5 ~ 500,
+                        stepsEM==6 ~ 1000,
+                        stepsEM==7 ~ 2000
+                        )
+  x1 <- IPH(PH(structure = "coxienne généralisée" , dimension = m),gfun="gompertz",gfunpars = c(beta=1))
+  result <- ajustement(x1, y, weights, stepsEM = stepsEM,maxit=500)
+
+  return(-result$cout)
+}
+
+
+
+
+result <- ga(type = "binary",nBits= 9,
+             fitness = eval_func, 
+  maxiter = 5, 
+  popSize = 50, 
+seed=1234,keepBest=TRUE)
+
+best_params <- result$iter$bestIndv
+cat("Best hyperparameters: ", best_params, "\n")
+
+```
+
+## Chocs
+
+On reprend le modèle IPH coxien généralisé. On applique un choc de mortalité sur l'ensemble des états.
+
+```{r}
+xchoc <- x10
+diag(xchoc@pars$S) <- (x10@pars$S %>% diag)-0.003
+
+```
+
+Un autre sur la moitié de la population la plus fragile.
+
+```{r}
+xchoc2 <- x10
+diag(xchoc2@pars$S)[8:m] <- (x10@pars$S %>% diag)[8:m]-1
+```
+
+```{r}
+df <- tibble(x=y,y1=qx(y,x10),y2=qx(y,xchoc),y3=qx(y,xchoc2))
+highchart() %>% 
+  hc_add_series(df,"line",hcaes(x=x,y=y1)) %>% 
+  hc_add_series(df,"line",hcaes(x=x,y=y2)) %>% 
+  hc_add_series(df,"line",hcaes(x=x,y=y3))
+```
+
+```{r}
+df <- tibble(x=y,y1=dens(x10,y),y2=dens(xchoc,y),y3=dens(xchoc2,y))
+highchart() %>% 
+  hc_add_series(df,"line",hcaes(x=x,y=y1)) %>% 
+  hc_add_series(df,"line",hcaes(x=x,y=y2)) %>% 
+  hc_add_series(df,"line",hcaes(x=x,y=y3))
+```
+
+```{r}
+integrate(function(x) dens(x10,x),0,200)
+integrate(function(x) dens(xchoc,x),0,200)
+integrate(function(x) dens(xchoc2,x),0,200)
+```
+
+### Régression IP
+
+```{r}
+quotients2 <- qxt %>% filter(Table=="H2021H") %>% select(-Table)
+lx2 <- quotients2 %>% select(-Age) %>% apply(2,FUN =lx_rec) %>% as_tibble %>% mutate(Age=0:120,.before = "2022")
+```
+
+```{r}
+dx2 <-  (lx2-lead(lx2)) %>%  mutate(Age=0:120) 
+dat2 <- lx2 %>% pivot_longer(cols=c(-Age),names_to = "Annee",values_to = "lx")
+dat2 <- dat2 %>% left_join(dx2 %>% pivot_longer(cols=c(-Age),names_to = "Annee",values_to = "dx"),by=c("Age","Annee"))
+dat2 <- dat2 %>% mutate(Annee=as.numeric(Annee))
+dat2 <- na.omit(dat2)
+```
+
+```{r}
+xmax <- 110
+donnees_ajust2 <- dat2 %>% filter(Annee==2022,Age<=xmax)
+donnees_ajust2 <- donnees_ajust2 %>% mutate(mux=-log(1-dx/lx),Sexe="H")
+donnees_ajust <- donnees_ajust %>% mutate(Sexe="F")
+
+donnees_ajust <- donnees_ajust %>% rbind(donnees_ajust2)
+```
+
+```{r}
+m <- 2
+set.seed(1)
+x2 <- IPH(PH(structure = "coxienne généralisée" , dimension = m),gfun="gompertz")
+weights <- (donnees_ajust %>% pull(dx))/100000
+y <- (donnees_ajust %>% pull(Age)) + 0.5
+x2@fit <- list(weights=weights,obs=y)
+set.seed(1)
+covariates <- tibble(y=y,sexe=ifelse(donnees_ajust$Sexe=="F",1,0),intercept=rep(1,dim(donnees_ajust)[1]))
+x_reg <- reg(x2, y ~ sexe + intercept ,data=covariates, weight=weights, stepsEM = 3,every=1,scale=100)
+```
+
+```{r}
+plot(y[1:111],weights[1:111])
+curve(dens(x_reg,x)*exp(x_reg@reg$pars[1]),col='red',add=T)
 ```
