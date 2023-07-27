@@ -352,7 +352,7 @@ arma::vec DensiteGompertzs(const arma::rowvec& alpha,const arma::mat& S,const ar
 }
 
 // [[Rcpp::export]]
-arma::vec logDensiteGompertzs(const arma::rowvec& alpha,const arma::mat& S,const arma::vec& y,const double& beta, const arma::vec& mx){
+arma::vec logDensiteGompertzs(const arma::rowvec& alpha,const arma::mat& S,const arma::vec& y,const double& beta, const arma::vec& l_mx){
 	int n=y.n_elem;
 	arma::vec s=Exit(S);
 	arma::vec result(n);
@@ -363,7 +363,24 @@ arma::vec logDensiteGompertzs(const arma::rowvec& alpha,const arma::mat& S,const
     vector_of_matrices(aux_vect, S, a, m);
 
 	for (int i; i<n;++i){
-		result(i) = mx(i) + y(i)*beta + std::log(arma::accu(alpha * expSxUNI(mx(i) * invgGompertz(y(i),beta), m, aux_vect, a) * s));
+		result(i) = l_mx(i) + y(i)*beta + std::log(arma::accu(alpha * expSxUNI(exp(l_mx(i)) * invgGompertz(y(i),beta), m, aux_vect, a) * s));
+	}
+	return result;
+}
+
+// [[Rcpp::export]]
+arma::vec SurvieGompertzs(const arma::rowvec& alpha,const arma::mat& S,const arma::vec& y,const double& beta, const arma::vec& mx){
+	int n=y.n_elem;
+	arma::vec s=Exit(S);
+	arma::vec result(n);
+
+	double a = max_diagonal(S * (-1));
+    int m{8};
+    std::vector<arma::mat> aux_vect;
+    vector_of_matrices(aux_vect, S, a, m);
+
+	for (int i; i<n;++i){
+		result(i) =  arma::accu(alpha * expSxUNI(mx(i) * invgGompertz(y(i),beta), m, aux_vect, a));
 	}
 	return result;
 }

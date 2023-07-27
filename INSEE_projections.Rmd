@@ -1470,7 +1470,8 @@ clusterExport(cl,list("y","weights","ajustement","loss","donnees_ajust","retpar"
 clusterEvalQ(cl,source("C:/Users/aper/Documents/PH.R"))
 
 # vec <- c(1,seq(10,100,10),1000,2000)
-vec <- seq(1000,5000,500)
+# vec <- seq(1000,5000,500)
+vec <- 1:10
 
 Ajustements2 <-  parLapply(cl,vec , function(k) {
   x1 <- IPH(PH(structure = "coxienne généralisée" , dimension = 10),gfun="gompertz",gfunpars = c(beta=1))
@@ -1492,6 +1493,7 @@ sapply(Ajustements2,function(ajust) (ajust[[2]])) %>% plot
 \
 \
 \
+Tuning des hyperparamètres par algorithme génétique
 
 ```{r}
 
@@ -1603,11 +1605,109 @@ weights <- (donnees_ajust %>% pull(dx))/100000
 y <- (donnees_ajust %>% pull(Age)) + 0.5
 x2@fit <- list(weights=weights,obs=y)
 set.seed(1)
-covariates <- tibble(y=y,sexe=ifelse(donnees_ajust$Sexe=="F",1,0),intercept=rep(1,dim(donnees_ajust)[1]))
-x_reg <- reg(x2, y ~ sexe + intercept ,data=covariates, weight=weights, stepsEM = 3,every=1,scale=100)
+covariates <- tibble(y=y,intercept=rep(1,dim(donnees_ajust)[1]),sexe=ifelse(donnees_ajust$Sexe=="F",1,0))
+x_reg <- reg(x2, y ~ intercept + sexe  ,data=covariates, weight=weights, stepsEM = 1,every=1,scale=100)
 ```
 
 ```{r}
+df <- covariates %>% mutate(weights=weights,lmux=log(donnees_ajust$mux))
+X <- covariates %>% select(-y) %>% as.matrix()
 plot(y[1:111],weights[1:111])
-curve(dens(x_reg,x)*exp(x_reg@reg$pars[1]),col='red',add=T)
+curve(dens(x_reg,x,X[1:111,]),col='red',add=T)
+```
+
+```{r}
+plot(y[112:length(y)],weights[112:length(y)])
+curve(dens(x_reg,x,X[112:length(y),]),col='red',add=T)
+```
+
+```{r}
+plot(df$y,df$lmux,col=as.factor(df$sexe))
+curve(log(haz(x_reg,x,X[1:111,])),col='red',add=T)
+curve(log(haz(x_reg,x,X[112:length(y),])),col='black',add=T)
+```
+
+```{r,warning=F}
+loss2 <- function(x,dimension,X){
+  
+  params <- tail(x,3)
+  theta <- params[2:3]
+  beta <- params[1]
+  if (dimension==1){
+    alpha <- 1
+    S <- matrix(x[dimension])
+  }
+  else{
+    alpha <- c(x[1:(dimension-1)],1-sum(x[1:(dimension-1)]))
+    S <- diag(x[seq(dimension,2*dimension-1,1)])
+    S[cbind(1:(nrow(S)-1), 2:ncol(S))] <- x[(2*dimension):(length(x)-3)]
+    
+  }
+  objiph <- SPH(IPH(PH(alpha,S),gfun="gompertz",gfunpars = beta),regpars=theta)
+
+  
+
+  
+   L <- donnees_ajust %>% group_by(Age) %>% filter(mux!= Inf) %>% summarise(A=(log(haz(objiph,Age+0.5,X))-log(mux))^2) %>% pull(A) %>%  sum
+   
+  cat("\r",format(Sys.time(),'%H:%M:%S'))
+  cat(" Fonction de coût : ",L)
+  flush.console()
+  
+   
+  return(L)
+}
+
+alpha <- x_reg@pars$alpha[1:(m-1)]
+beta <- x_reg@gfun$pars
+S <- x_reg@pars$S
+theta <- x_reg@reg$pars
+if (m>1){
+  loss2(c(alpha,diag(S),S[cbind(1:(nrow(S)-1), 2:ncol(S))],beta,theta),m,X)
+}
+
+```
+
+```{r}
+tdim <- 3*m+1
+nbeq <- 3*m+2
+  A0 <- matrix(c(rep(-1,m-1),rep(0,tdim-(m-1))),nrow=1)
+  A1 <- diag(-1,nrow=m-1,ncol=tdim)
+  A2 <- cbind(matrix(0,nrow=m-1,ncol=m-1),diag(-1,m-1,m),diag(-1,m-1),matrix(0,nrow=m-1,ncol=3))
+  A3 <- cbind(matrix(0,nrow=m,ncol=m-1),diag(-1,m),matrix(0,nrow=m,ncol=m-1),matrix(0,nrow=m,ncol=3))
+  A4 <- matrix(c(rep(0,tdim-3),1,0,0),nrow=1)
+  ui <- rbind(A0,-A1,A2,A3,A4)
+  ci <- c(-1,rep(0,m-1),rep(0,m-1),rep(0,m),0)
+  parametres <- c(alpha,diag(S),ifelse(exit(S)[-m]==0,S[cbind(1:(nrow(S)-1), 2:ncol(S))]-1e-10,S[cbind(1:(nrow(S)-1), 2:ncol(S))]),beta,theta)
+  oppar <- suppressWarnings(constrOptim(theta=parametres,f=loss2,ui=ui,ci=ci,grad=NULL,control = list(maxit=500),dimension=m,X=X))
+```
+
+```{r}
+retpar2 <- function(x,m){
+      params <- tail(x,3)
+  theta <- params[2:3]
+     if (m==1){
+    S <- matrix(x[1])
+    alpha <- 1
+  }
+  else{
+  alpha <- x[1:(m-1)]
+  alpha <- c(alpha,1-sum(alpha))
+    S <- diag(x[seq(m,2*m-1,1)])
+    S[cbind(1:(nrow(S)-1), 2:ncol(S))] <- x[(2*m):(length(x)-3)]
+  }
+    return(list(alpha=alpha,beta=beta,S=S,theta=theta))
+}
+
+parlist <- retpar2(oppar$par,m)
+```
+
+```{r}
+x20 <- SPH(IPH(PH(alpha = parlist$alpha,S=parlist$S),gfun="gompertz",gfunpars = parlist$beta),regpars=parlist$theta)
+
+x20@fit$obs <- y
+
+plot(df$y,df$lmux,col=as.factor(df$sexe))
+curve(log(haz(x20,x,X[1:111,])),col='red',add=T)
+curve(log(haz(x20,x,X[112:length(y),])),col='black',add=T)  
 ```

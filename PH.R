@@ -72,7 +72,7 @@ exit <- function(x){
 
 
 #####################################
-surv <- function(x,y){
+surv <- function(x,y,...){
   Survie(x$alpha,x$S,y)
 }
 
@@ -94,6 +94,7 @@ EM_step <- function(x,y,weight,scale=1){
   # Etape E
   
   ABC <- ABC(alpha,S,y,weight)
+  
   
   A <- ABC[[1]]
   
@@ -122,6 +123,9 @@ EM_step <- function(x,y,weight,scale=1){
   
   else if(class(x)=="IPH"){
     return(IPH(PH(alpha,S/scale),gfun=x@gfun$name,gfunpars = x@gfun$pars/scale))
+  }
+  else if(class(x)=="SPH"){
+    return(SPH(IPH=IPH(PH=PH(alpha,S/scale),gfun=x@gfun$name,gfunpars = x@gfun$pars/scale),regpars=x@reg$pars))
   }
   
 }
@@ -447,8 +451,8 @@ setMethod("reg",
             WY <- list(weights=weight,obs=y)
             cat(format(Sys.time(),'%H:%M:%S')," : Début de l'algorithme EM","\n")
             for (i in 1:stepsEM){
-              y_trans <- obj@gfun$inverse(y,obj@gfun$pars)
-              obj2 <- SPH(IPH(EM_step(obj,y_trans,weight),gfunpars = obj@gfun$pars))
+              y_trans <- exp(X %*% obj@reg$pars) * obj@gfun$inverse(y,obj@gfun$pars)
+              obj2 <- EM_step(obj,y_trans,weight)
               if (obj@gfun$name=="gompertz"){
                 LL <- function(params,alpha,S,y,weight) {
                   beta <- params[1]
@@ -460,13 +464,11 @@ setMethod("reg",
                 LL2 <- function(params,alpha,S,y,weight) {
                   beta <- params[1]
                   theta <- params[2:length(params)]
-                  mx <- X %*% theta
-                  sum(weight*c(logDensiteGompertzs(alpha,S,y,beta,mx)))
+                  l_mx <- X %*% theta
+                  sum(weight*c(logDensiteGompertzs(alpha,S,y,beta,l_mx)))
                   
                 }
-                print(LL2(c(obj@gfun$pars,obj@reg$pars),alpha=obj2@pars$alpha,S=obj2@pars$S,weight=weights,y=y))
                 beta <- optim(par=c(obj@gfun$pars,obj@reg$pars),fn=LL2,alpha=obj2@pars$alpha,S=obj2@pars$S,weight=weights,y=y,control = list(fnscale=-1,warn.1d.NelderMead=F))
-                print(beta)
                 }
               
               else{
@@ -484,7 +486,7 @@ setMethod("reg",
                 cat("Log-Vraisemblance :",beta$value)}
               flush.console()
             }
-            obj@fit[["loglik"]] <- logLik(scale(obj,scale=scale))
+            # obj@fit[["loglik"]] <- logLik(scale(obj,scale=scale))
             cat("\n",format(Sys.time(),'%H:%M:%S')," : Fin de l'algorithme EM")
             obj <- scale(obj,scale=scale)
             return(obj)
@@ -520,6 +522,39 @@ setMethod("scale",
               obj@fit$obs <- x@fit$obs*scale
             }
             obj@gfun$pars <- x@gfun$pars/scale
-            obj@reg$pars <- x@reg$pars/scale
             return(obj)
+          })
+
+setMethod("dens",
+          "SPH",
+          function(x,y,X){
+            S <- x@pars$S
+            alpha <- x@pars$alpha
+            s <- exit(S)
+            beta <- x@gfun$pars
+            theta <- x@reg$pars
+            mx <- exp(X %*% theta)
+            if (x@gfun$name=="gompertz"){
+              c(DensiteGompertzs(alpha,S,y,beta,mx))
+            }
+          })
+
+setMethod("surv",
+          "SPH",
+          function(x,y,X){
+            S <- x@pars$S
+            alpha <- x@pars$alpha
+            s <- exit(S)
+            beta <- x@gfun$pars
+            theta <- x@reg$pars
+            mx <- exp(X %*% theta)
+            if (x@gfun$name=="gompertz"){
+              c(SurvieGompertzs(alpha,S,y,beta,mx))
+            }
+          })
+
+setMethod("haz",
+          "SPH",
+          function(x,y,X){
+            dens(x,y,X)/surv(x,y,X)
           })
