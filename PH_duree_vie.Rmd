@@ -1,0 +1,482 @@
+---
+title: "PH_duree_vie"
+output: html_document
+date: "2023-08-03"
+---
+```{r}
+source("C:/Users/aper/Documents/PH.R")
+```
+
+#Ajustement
+
+```{r}
+library(readxl)
+Data_mortality <- read_excel("G:/Public/Stagiaires/Aurelien/Data_mortality.xlsx")
+
+select <- dplyr::select
+
+Data_mortality <- Data_mortality %>% mutate(Tj=as.numeric((DateOut-DateOfBirth)/365),Sexe=ifelse(Gender=="Female","F","H")) %>% select(Sexe,Tj,DateOfBirth,DateOut) %>% rename(DateNaissance=DateOfBirth,DateDeces=DateOut)
+Tj <- Data_mortality$Tj
+```
+
+```{r}
+library(fitdistrplus)
+library(DescTools)
+fitfit <- fitdist(Tj,dGompertz,start=list(shape=1,rate=3),lower=c(-Inf,0))
+denscomp(fitfit)
+cdfcomp(fitfit)
+```
+Loi Gompertz adaptée
+
+
+
+```{r}
+m <- 1
+x <- IPH(PH(structure="coxienne",dimension=m),gfun="gompertz")
+x_fit <- fit(x,Tj,stepsEM=200,scale=100,every=1)
+```
+
+```{r}
+hist(Tj,prob=T)
+curve(dens(x_fit,x),add=T,col='red')
+```
+
+```{r}
+plot(ecdf(Tj))
+curve(1-surv(x_fit,x),add=T,col='red')
+```
+
+
+```{r}
+library(parallel)
+
+num_cores <- detectCores()
+
+
+cl <- makeCluster(num_cores)
+
+clusterExport(cl,list("Tj"),envir = environment())
+clusterEvalQ(cl,source("C:/Users/aper/Documents/PH.R"))
+
+
+Ajustements <-  parLapply(cl, 1:20, function(k) {
+  x1 <- IPH(PH(structure="coxienne généralisée",dimension=k),gfun="gompertz")
+  x_fit1 <- fit(x=x1, y=Tj, stepsEM = 1500,every=1,scale=100)
+  aj <- list(modele=x_fit1,logvraisemblance=x_fit1@fit$loglik)
+return(aj)
+})
+
+stopCluster(cl)
+```
+
+```{r}
+lV <- Ajustements %>% lapply(function(x) x$logvraisemblance) %>% unlist()
+lV %>% plot
+```
+
+
+
+
+```{r}
+which(lV==max(lV))
+```
+```{r}
+hist(Tj,prob=T)
+curve(dens(Ajustements[[11]]$modele,x),add=T,col='red')
+
+```
+
+
+```{r}
+plot(ecdf(Tj))
+curve(1-surv(Ajustements[[11]]$modele,x),add=T,col='red')
+```
+
+
+
+
+
+```{r}
+curve((haz(Ajustements[[11]]$modele,x)),col='red',xlim=c(60,110))
+```
+
+
+```{r}
+Deces <- read_excel("G:/Public/Stagiaires/Aurelien/Décès.xlsx")
+Deces <- Deces %>% mutate(Tj=as.numeric((`Date de décès`-`date de naissance`)/365),Sexe=ifelse(Sexe==1,"F","H")) %>% select(Sexe,Tj,`date de naissance`,`Date de décès`) %>% rename(DateNaissance=`date de naissance`,DateDeces=`Date de décès`)
+Deces <- na.omit(Deces)
+# Deces %>% group_by(Sexe) %>% summarise(m=mean(Tj))
+```
+
+
+```{r}
+Donnees <- rbind(Deces,Data_mortality)
+```
+```{r}
+Tj <- Donnees$Tj
+```
+
+```{r}
+hist(Tj,prob=T)
+```
+```{r}
+fitfit <- fitdist(Tj,dGompertz,start=list(shape=1,rate=3),lower=c(-Inf,0))
+denscomp(fitfit)
+cdfcomp(fitfit)
+```
+
+```{r}
+library(parallel)
+
+num_cores <- detectCores()
+
+
+cl <- makeCluster(num_cores)
+
+clusterExport(cl,list("Tj"),envir = environment())
+clusterEvalQ(cl,source("C:/Users/aper/Documents/PH.R"))
+
+
+Ajustements <-  parLapply(cl, 1:20, function(k) {
+  x1 <- IPH(PH(structure="coxienne généralisée",dimension=k),gfun="gompertz")
+  x_fit1 <- fit(x=x1, y=Tj, stepsEM = 10000000,every=1,scale=100,reltol=1e-5)
+  aj <- list(modele=x_fit1,logvraisemblance=x_fit1@fit$loglik)
+return(aj)
+})
+
+stopCluster(cl)
+```
+
+```{r}
+lV <- Ajustements %>% lapply(function(x) x$logvraisemblance) %>% unlist()
+lV %>% plot
+```
+
+
+
+
+```{r}
+which(lV==max(lV))
+```
+
+```{r}
+xfit <- Ajustements[[9]]$modele
+```
+
+```{r}
+hist(Tj,prob=T)
+curve(dens(xfit,x),add=T,col='red')
+
+```
+
+
+```{r}
+plot(ecdf(Tj))
+curve(1-surv(xfit,x),add=T,col='red')
+```
+```{r}
+curve(haz(xfit,x),xlim=c(31,100),col='red')
+```
+```{r}
+curve(log(haz(xfit,x)),xlim=c(31,100),col='red')
+```
+#Régression
+
+##Avec sexe
+```{r}
+X <- tibble(y=Tj,sexe=ifelse(Donnees$Sexe=="F",1,0))
+# x <- IPH(PH(dimension=12,structure="coxienne généralisée"))
+# x_reg <- reg(x,y ~ sexe,data=X,stepsEM=3,every=1,scale=100,reltol=1e-5)
+
+
+library(parallel)
+
+num_cores <- detectCores()
+
+
+cl <- makeCluster(num_cores)
+
+clusterExport(cl,list("Tj","X","Donnees"),envir = environment())
+clusterEvalQ(cl,source("C:/Users/aper/Documents/PH.R"))
+
+
+Ajustements <-  parLapply(cl, 1:20, function(k) {
+  x <- IPH(PH(dimension=k,structure="coxienne généralisée"))
+  x_reg <- reg(x,y ~ sexe,data=X,stepsEM=1000000,every=1,scale=100,reltol=1e-7)
+  aj <- list(modele=x_reg,logvraisemblance=x_reg@fit$loglik)
+return(aj)
+})
+
+stopCluster(cl)
+
+```
+
+
+```{r}
+lV <- Ajustements %>% lapply(function(x) x$logvraisemblance) %>% unlist()
+# lV %>% plot
+
+highchart() %>% 
+  hc_add_series(tibble(x=1:20,y=lV),"line",hcaes(x=x,y=y)) %>% 
+  hc_legend(enabled=F) %>% 
+  hc_title(text="Log-vraisemblance en fonction du nombre de phases de la loi IPH-Gompertz") %>% 
+  hc_xAxis(title=list(text="Nombre de phases")) %>% 
+  hc_yAxis(title=list(text="Log-vraisemblance"))
+```
+
+
+```{r}
+# x_reg <- Ajustements[[6]]$modele
+
+# Charger la bibliothèque ellipse
+library(ellipse)
+
+# Estimation des paramètres
+mle <- c(x_reg@gfun$pars, x_reg@reg$pars)
+
+# Matrice d'information de Fisher négative
+fisher_info <- -x_reg@fit$hessian
+
+# Calcul de la covariance à partir de l'inverse de l'information de Fisher
+cov_matrix <- solve(fisher_info)
+
+# Niveaux de confiance pour l'ellipse (par exemple, 0.95 pour un intervalle de confiance de 95%)
+confidence_level <- 0.95
+
+# Tracer l'ellipse de confiance
+ellipse_points <- ellipse::ellipse(cov_matrix/100, centre = mle, level = confidence_level)
+# plot(ellipse_points, type = "l", lty = 2, col = "red", xlab = "beta", ylab = "theta")
+# points(mle[1], mle[2], col = "blue", pch = 19)
+
+highchart() %>% 
+  hc_add_series(tibble(x=ellipse_points[,1],y=ellipse_points[,2]),"line",hcaes(x=x,y=y),name="Ellipse de confiance à 95%") %>% 
+  hc_add_series(tibble(x=mle[1],y=mle[2]),"scatter",hcaes(x=x,y=y),name="Estimateur du maximum de vraisemblance") %>%
+  hc_xAxis(title=list(text="beta")) %>% 
+  hc_yAxis(title=list(text="theta")) %>% 
+  hc_title(text="Incertitude sur les paramètres de la régression")
+  
+  
+
+
+```
+
+```{r}
+load(file="C:/Users/aper/Documents/PH/x_reg.RData")
+```
+
+```{r}
+# hist(X$y[X$sexe==1],prob=T)
+# curve(dens(evaluate(x5,1),x),xlim=c(30,110),col='blue',add=T)
+```
+
+
+```{r}
+# plot(ecdf(X$y[X$sexe==1]))
+# curve(1-surv(evaluate(x5,1),x),xlim=c(30,110),col='blue',add=T)
+```
+```{r}
+# plot(seq(30,110,0.1),log(ecdf(X$y[X$sexe==1])(seq(30,110,0.1))))
+# curve(log(1-surv(evaluate(x5,1),x)),xlim=c(30,110),col='blue',add=T)
+```
+```{r}
+# plot(seq(30,110,0.1),log(ecdf(X$y[X$sexe==1])(seq(30,110,0.1))))
+# curve(log(1-surv(evaluate(x_reg,1),x)),xlim=c(30,110),col='blue',add=T)
+
+highchart() %>% 
+  hc_add_series(tibble(x=seq(30,110,0.1),y=log(ecdf(X$y[X$sexe==1])(seq(30,110,0.1)))),"scatter",hcaes(x=x,y=y),name="Empirique") %>% 
+  hc_add_series(tibble(x=seq(30,110,0.5),y=log(1-surv(evaluate(x_reg,1),seq(30,110,0.5)))),"line",hcaes(x=x,y=y),name="Modélisée") %>% 
+  hc_title(text="Logartihme de la fonction de répartition de l'âge au décès pour les femmes") 
+
+
+```
+
+```{r}
+# hist(X$y[X$sexe==0],prob=T)
+# curve(dens(evaluate(x_reg,1),x),xlim=c(30,110),col='red',add=T)
+```
+```{r}
+# plot(ecdf(X$y[X$sexe==0]))
+# curve((1-surv(evaluate(x_reg,0),x)),xlim=c(30,110),add=T,col='red')
+```
+```{r}
+# plot(seq(30,110,0.1),log(ecdf(X$y[X$sexe==0])(seq(30,110,0.1))))
+# curve(log(1-surv(evaluate(x_reg,0),x)),xlim=c(30,110),add=T,col='red')
+```
+```{r}
+highchart() %>% 
+  hc_add_series(tibble(x=seq(30,110,0.1),y=log(ecdf(X$y[X$sexe==0])(seq(30,110,0.1)))),"scatter",hcaes(x=x,y=y),name="Empirique") %>% 
+  hc_add_series(tibble(x=seq(30,110,0.5),y=log(1-surv(evaluate(x_reg,0),seq(30,110,0.5)))),"line",hcaes(x=x,y=y),name="Modélisée")%>% 
+  hc_title(text="Logartihme de la fonction de répartition de l'âge au décès pour les hommes") 
+```
+
+
+```{r}
+# plot(seq(30,110,0.1),log(ecdf(X$y[X$sexe==0])(seq(30,110,0.1))))
+# curve(log(1-surv(evaluate(x5,0),x)),xlim=c(30,110),add=T,col='red')
+```
+```{r}
+# plot(x=seq(0,1,length.out=length(Tj)),y=sort(surv(x=x_reg,y=Tj,X=as.matrix(X[,-1]))))
+# curve(identity(x),add=T,col='red')
+
+highchart() %>% 
+  hc_add_series(tibble(x=seq(0,1,length.out=length(Tj)),y=sort(surv(x=x_reg,y=Tj,X=as.matrix(X[,-1])))),"scatter",hcaes(x=x,y=y)) %>% 
+  hc_add_series(tibble(x=0:10/10,y=0:10/10),"line",hcaes(x=x,y=y),marker=list(enabled=F)) %>% 
+  hc_legend(enabled=F) %>% 
+  hc_title(text="PP-Plot") %>% 
+  hc_xAxis(title=list(text="Fonction de répartition d'une loi uniforme standard")) %>% 
+  hc_yAxis(title=list(text="Fonction de répartition empirique après PIT"))%>% 
+  hc_plotOptions(series=list(marker=list(radius=2)))
+
+
+```
+
+```{r}
+mod <- glm(formula = y ~ sexe,data=X,family = Gamma(link="log"))
+
+phi <- summary(mod)$dispersion
+
+hist(X$y[X$sexe==1],prob=T)
+curve(dgamma(x,shape=1/phi,scale=predict(mod,type="response")[1]*phi),xlim=c(30,110),col='blue',add=T)
+
+```
+
+```{r,warning=F}
+# ks.test(surv(x=x5,y=Tj,X=as.matrix(X[,-1])),"punif",0,1)
+ks.test(surv(x=x_reg,y=Tj,X=as.matrix(X[,-1])),"punif",0,1)
+ks.test(pgamma(Tj,shape=1/phi,scale=exp((mod$coefficients %*% t(cbind(rep(1,11619),X[-1])))[1])*phi),"punif",0,1)
+```
+```{r}
+# gqg <- rexp(100,2)
+# qgqg <- pexp(gqg,1/mean(gqg))
+# ks.test(gqg,"pexp",2,simulate.p.value = F)
+# ks.test(gqg,"pexp",1/mean(gqg),simulate.p.value = F)
+# ks.test(gqg,"pexp",1/mean(gqg),simulate.p.value = T)
+# ks.test(qgqg,"punif",0,1)
+```
+
+
+```{r}
+# Tj[permute::shuffle(length(Tj))]
+plot(surv(x=x5,y=Tj,X=as.matrix(X[,-1])))
+abline(v=6585,col='red')
+abline(v=6585+2517,col='red')
+```
+```{r}
+plot(surv(x=x_reg,y=Tj,X=as.matrix(X[,-1])))
+abline(v=6585,col='red')
+abline(v=6585+2517,col='red')
+```
+
+
+
+```{r}
+hist(X$y[X$sexe==0],prob=T)
+curve(dgamma(x,shape=1/phi,scale=predict(mod,type="response")[36]*phi),xlim=c(30,110),col='red',add=T)
+```
+```{r}
+# plot(x=seq(0,1,length.out=length(Tj)),y=sort(pgamma(Tj,shape=1/phi,scale=exp((mod$coefficients %*% t(cbind(rep(1,11619),X[-1])))[1])*phi)))
+# curve(identity(x),add=T,col='red')
+set.seed(1)
+Tj2 <- sample(Tj,5000)
+
+highchart() %>% 
+  hc_add_series(tibble(x=seq(0,1,length.out=length(Tj)),y=sort(surv(x=x_reg,y=Tj,X=as.matrix(X[,-1])))),"line",hcaes(x=x,y=y),name="Régression PI") %>% 
+  hc_add_series(tibble(x=0:10/10,y=0:10/10),"line",hcaes(x=x,y=y),marker=list(enabled=F),name="y=x") %>% 
+  hc_add_series(tibble(x=seq(0,1,length.out=length(Tj)),y=sort(pgamma(Tj,shape=1/phi,scale=exp((mod$coefficients %*% t(cbind(rep(1,11619),X[-1])))[1])*phi))),"line",hcaes(x=x,y=y),name="GLM log-gamma") %>% 
+  
+  hc_title(text="PP-Plot") %>% 
+  hc_xAxis(title=list(text="Fonction de répartition d'une loi uniforme standard")) %>% 
+  hc_yAxis(title=list(text="Fonction de répartition empirique après PIT")) %>% 
+  hc_plotOptions(series=list(marker=list(radius=2,enabled=T))) %>% 
+  hc_subtitle(text="Statistique de Kolmogorov-Smirnov: Régression PI 0.0042563 | GLM log-gamma 0.044303")
+```
+
+
+```{r}
+dxF <- X %>% filter(sexe==1) %>% pull(y) %>% round()  %>% table
+dxH <- X %>% filter(sexe==0) %>% pull(y) %>% round()  %>% table
+dxF <- tibble(x=as.numeric(names(dxF)),dx=as.numeric(dxF),sexe="F")
+dxH <- tibble(x=as.numeric(names(dxH)),dx=as.numeric(dxH),sexe="H")
+dx <- rbind(dxF,dxH)
+mod2 <- mgcv::gam(dx~ s(x)+sexe,data=dx,family = poisson(link="log"))
+predict(mod2,type='response',newdata = tibble(x=80,sexe="F"))
+```
+```{r}
+plotx <- hist(X$y[X$sexe==0],breaks = 71,plot=F)$counts
+ploty <- predict(mod2,type='response',newdata = tibble(x=35:104,sexe=rep("H",70))) 
+plot(plotx,ploty)
+abline(a=0,b=1)
+```
+```{r}
+plotx <- hist(X$y[X$sexe==0],breaks = 71,plot=F)$counts
+ploty <- dens(x_reg,35:104,as.matrix(rep(0,70)))*2678
+plot(plotx,ploty)
+abline(a=0,b=1)
+```
+
+```{r}
+plotx <- hist(X$y[X$sexe==1],breaks = 78,plot=F)$counts
+ploty <- predict(mod2,type='response',newdata = tibble(x=31:107,sexe=rep("F",77))) 
+plot(plotx,ploty)
+abline(a=0,b=1)
+```
+```{r}
+plotx <- hist(X$y[X$sexe==1],breaks = 78,plot=F)$counts
+ploty <- dens(x_reg,31:107,as.matrix(rep(1,77)))*8941
+plot(plotx,ploty)
+abline(a=0,b=1)
+```
+
+
+
+##Avec sexe et génération
+
+Il manque génération 1969 à 1972.
+
+```{r}
+X2 <- Donnees %>% mutate(y=Tj,sexe=ifelse(Donnees$Sexe=="F",1,0),gen=(as.numeric(cut(as.numeric(substr(Donnees$DateNaissance,1,4)),breaks=seq(1900,1975,5),include.lowest=T)))) %>% select(y,sexe,gen)
+```
+
+```{r}
+x2 <- IPH(PH(dimension=5,structure="coxienne généralisée"))
+x_reg2 <- reg(x2,y ~ sexe + gen,data=X2,stepsEM=1000,every=1,scale=100,reltol=1e-5)
+```
+
+```{r}
+# Estimation des paramètres
+mle <- c(x_reg2@gfun$pars, x_reg2@reg$pars)
+
+# Matrice d'information de Fisher négative
+fisher_info <- -x_reg2@fit$hessian
+
+# Calcul de la covariance à partir de l'inverse de l'information de Fisher
+cov_matrix <- solve(fisher_info)
+
+# Niveaux de confiance 
+confidence_level <- 0.95
+
+mle-1.96*sqrt(diag(cov_matrix))
+mle
+mle+1.96*sqrt(diag(cov_matrix))
+
+```
+
+
+```{r}
+plot(x=seq(0,1,length.out=length(Tj)),y=sort(surv(x=x_reg2,y=Tj,X=as.matrix(X2[,-1]))))
+curve(identity(x),add=T,col='red')
+```
+```{r}
+print("Femmes")
+X2$gen[X2$sexe==1] %>% table
+print("Hommes")
+X2$gen[X2$sexe==0] %>% table
+```
+
+```{r}
+gene <- 1965
+sex <- 1
+plot(seq(30,110,0.1),(ecdf(X2$y[X2$sexe==sex & X2$gen==as.numeric(cut(gene,breaks=seq(1900,1975,5),include.lowest = T) )])(seq(30,110,0.1))))
+curve(1-surv(evaluate(x_reg2,c(sex,as.numeric(cut(gene,breaks=seq(1900,1975,5),include.lowest = T)))),x),xlim=c(30,110),add=T,col='red')
+```
+
