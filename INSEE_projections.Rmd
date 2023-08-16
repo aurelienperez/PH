@@ -1053,14 +1053,45 @@ On a donc 3 hyperparamètres: le nombre de phases, le paramètre scale et le nom
 J'ai remarqué que pour avoir un ajustement visuellement satisfaisant, il vaut mieux faire peu d'itérations de l'algorithme EM pour ne pas s'enfermer dans un maximum local de vraisemblance. La minimisation de la fonction de cout fait bien le travail après.
 
 ```{r}
-m <- 5
+# library(parallel)
+# 
+# num_cores <- detectCores()
+# 
+# 
+# cl <- makeCluster(num_cores)
+# 
+# clusterExport(cl,list("y","weights","donnees_ajust"),envir = environment())
+# clusterEvalQ(cl,source("C:/Users/aper/Documents/PH.R"))
+# 
+# 
+# Ajustements2 <-  parLapply(cl, 20:40, function(k) {
+#   x1 <- IPH(PH(structure = "coxienne généralisée" , dimension = k),gfun="gompertz",gfunpars = c(beta=1))
+#   aj <- fit(x1, y, weight=weights, stepsEM = 10000000,every=1000,scale=100,reltol=1e-9)
+# return(list(modele=aj,lv=logLik(aj)))
+# })
+# 
+# stopCluster(cl)
+# save(Ajustements2,file="Ajustements2.RData")
+load(file="C:/Users/aper/Documents/PH/Ajustements2.RData")
+```
+
+```{r}
+Ajustements2 %>% lapply(function(x) x$lv) %>% unlist %>% plot
+```
+```{r}
+Ajustements2[[20]]$modele %>% plot
+```
+
+
+```{r}
+m <- 17
 set.seed(1)
 weights <- (donnees_ajust %>% pull(dx))/100000
 y <- (donnees_ajust %>% pull(Age)) + 0.5
 n <- 5
 x1 <- IPH(PH(structure = "coxienne généralisée" , dimension = m),gfun="gompertz",gfunpars = c(beta=1))
 x1@fit <- list(weights=weights,obs=y)
-x_fit1 <- fit(x1, y, weight=weights, stepsEM = 1000,every=1,scale=100)
+x_fit1 <- fit(x1, y, weight=weights, stepsEM = 100000,every=1,scale=100,reltol=1e-8)
 
 
 ```
@@ -1110,6 +1141,9 @@ plot(x_fit1,type="haz",f="log",hch=highchart() %>%
 # }
 ```
 
+
+
+
 ```{r}
 loss <- function(x,dimension){
   
@@ -1126,14 +1160,15 @@ loss <- function(x,dimension){
   objiph <- IPH(PH(alpha,S),gfun="gompertz",gfunpars = beta)
 
   
-
   
-   L <- donnees_ajust %>% group_by(Age) %>% filter(mux!= Inf) %>% summarise(A=(log(haz(objiph,Age+0.5))-log(mux))^2) %>% pull(A) %>%  sum
+  
+   L <- donnees_ajust %>% group_by(Age) %>% summarise(A=(log(haz(objiph,Age+0.5))-log(mux))^2) %>% pull(A) %>%  sum
    
+
   cat("\r",format(Sys.time(),'%H:%M:%S'))
   cat(" Fonction de coût : ",L)
   flush.console()
-  
+
    
   return(L)
 }
@@ -1147,7 +1182,152 @@ if (m>1){
   loss(c(S,beta),m)
 }
 ```
+#Test gradient
+```{r}
+ek <- function(k,n){
+  diag(1,n)[k,]
+}
 
+grr <- function(x,dimension){
+    beta <- tail(x,1)
+  if (dimension==1){
+    alpha <- 1
+    S <- matrix(x[dimension])
+  }
+  else{
+    alpha <- c(x[1:(dimension-1)],1-sum(x[1:(dimension-1)]))
+    S <- diag(x[seq(dimension,2*dimension-1,1)])
+    S[cbind(1:(nrow(S)-1), 2:ncol(S))] <- x[(2*dimension):(length(x)-1)]
+  }
+    s <- exit(S)
+    f <- DensiteGompertz
+    g <- SurvieGompertz
+    d <- derivBetaGompertz
+    m <- derivExpMat
+    iota_k <- diag(1,dimension)[1:(dimension-1),] %>% matrix(ncol=dimension)
+    y <- donnees_ajust$Age+0.5
+    
+    
+  lhx_dt <- function(x){c(
+    #pik
+    
+    # apply(iota_k,1,function(ik){f(ik,S,s,x,beta)/f(alpha,S,s,x,beta)-g(ik,S,x,beta)/g(alpha,S,x,beta)}),
+    
+    sapply(1:(dimension-1),function(i){f(ek(i,dimension),S,s,x,beta)/f(alpha,S,s,x,beta)-g(ek(i,dimension),S,x,beta)/g(alpha,S,x,beta)-(f(ek(dimension,dimension),S,s,x,beta)/f(alpha,S,s,x,beta)-g(ek(dimension,dimension),S,x,beta)/g(alpha,S,x,beta))}),
+
+    
+    #Sii
+    sapply(1:dimension,function(i){exp(beta*x)*(alpha %*% (m(S,(exp(beta*x)-1)/beta,i,i) %*% s - expm::expm(S*(exp(beta*x)-1)/beta) %*% ek(i,dimension)) )/f(alpha,S,s,x,beta)-sum(alpha %*% m(S,(exp(beta*x)-1)/beta,i,i))/g(alpha,S,x,beta)}),
+    
+    
+    #Si,i+1
+    sapply(1:(dimension-1),function(i){exp(beta*x)*(alpha %*% (m(S,(exp(beta*x)-1)/beta,i,i+1) %*% s - expm::expm(S*(exp(beta*x)-1)/beta) %*% ek(i,dimension)) )/f(alpha,S,s,x,beta)-sum(alpha %*% m(S,(exp(beta*x)-1)/beta,i,i+1))/g(alpha,S,x,beta)}),
+    
+
+    #beta
+    x+d(alpha,S,s,x,beta)*exp(beta*x)/f(alpha,S,s,x,beta)-d(alpha,S,rep(1,dimension),x,beta)/g(alpha,S,x,beta))}
+
+  apply(sapply(y,lhx_dt),1,function(Y) 2*sum(Y*(log(f(alpha,S,s,y,beta))-log(g(alpha,S,y,beta))-log(donnees_ajust$mux))) )
+  
+}
+```
+
+Dérivée de l'exponentielle de matrice ✔
+
+```{r}
+#Karplus, Schwinger
+derivExpMat(matrix(c(-2,0,0,1,-2,0,0,0,-1),nrow=3),3,1,2)
+#Formule de Zassenhaus
+E12 <- ek(1,3) %*% t(ek(2,3))
+3*expm::expm(matrix(c(-2,0,0,1,-2,0,0,0,-1),nrow=3) *3) %*% E12
+#derivation numérique
+testd <- function(s11,s21,s31,s12,s22,s32,s13,s23,s33,t) {
+    S <- matrix(c(s11,s21,s31,s12,s22,s32,s13,s23,s33),nrow=3)
+    expm::expm(S*t)}
+h <- 1e-5
+(testd(-2,0,0,1+h,-2,0,0,0,-1,3)-testd(-2,0,0,1,-2,0,0,0,-1,3))/h
+```
+```{r}
+#Karplus, Schwinger
+derivExpMat(matrix(c(-2,0,0,1,-3,0,0,0,-1),nrow=3),3,1,2)
+# #Formule de Zassenhaus
+# 3*expm::expm(matrix(c(-2,0,0,1,-3,0,0,0,-1),nrow=3) *3) %*% E12
+#derivation numérique
+testd <- function(s11,s21,s31,s12,s22,s32,s13,s23,s33,t) {
+    S <- matrix(c(s11,s21,s31,s12,s22,s32,s13,s23,s33),nrow=3)
+    expm::expm(S*t)}
+h <- 1e-5
+(testd(-2,0,0,1+h,-3,0,0,0,-1,3)-testd(-2,0,0,1,-3,0,0,0,-1,3))/h
+```
+
+
+```{r}
+i <- 3
+j <- 3
+Eij <- ek(i,3) %*% t(ek(j,3))
+apha <- sample(1:10,3,replace=T)
+apha <- apha/sum(apha)
+Stcoef <- c(-2,0,0,1,-8,0,0,0,-1)
+St <- matrix(Stcoef,nrow=3)
+Beta <- 0.01
+x <- 3
+#Karplus, Schwinger
+# sum(apha  %*%  (derivExpMat(St,3,i,j)))
+ apha  %*%  (derivExpMat(St,3,i,j)  %*% exit(St) - expm::expm(St*3) %*% ek(i,3))
+
+ -sum(apha %*% (derivExpMat(St,3,i,j) %*% Eij %*% St + expm::expm(St*3) %*% Eij ))
+
+
+#derivation numérique
+testd <- function(s11,s21,s31,s12,s22,s32,s13,s23,s33,t) {
+    S <- matrix(c(s11,s21,s31,s12,s22,s32,s13,s23,s33),nrow=3)
+    apha %*% expm::expm(S*t) %*% exit(S)
+    # sum(apha %*% expm::expm(S*t))
+    }
+
+h <- 1e-5
+(testd(-2,0,0,1,-8,0,0,0,-1+h,3)-testd(-2,0,0,1,-8,0,0,0,-1,3))/h
+
+library(numDeriv)
+
+grad(testd,-1,s11=-2,s21=0,s31=0,s12=1,s32=0,s23=0,s13=0,s22=-8,t=3)
+```
+
+
+```{r}
+apha <- sample(1:10,3,replace=T)
+apha <- apha/sum(apha)
+# apha <- c(1,0,0)
+Stcoef <- c(-2,0,0,1,-8,0,0,0,-1)
+St <- matrix(Stcoef,nrow=3)
+
+f <- DensiteGompertz
+g <- SurvieGompertz
+#formule fermée
+cat('\n','f et g','\n')
+f(ek(1,3),St,exit(St),x,Beta)/f(apha,St,exit(St),x,Beta)-g(ek(1,3),St,x,Beta)/g(apha,St,x,Beta)
+ f(ek(2,3),St,exit(St),x,Beta)/f(apha,St,exit(St),x,Beta)-g(ek(2,3),St,x,Beta)/g(apha,St,x,Beta)
+ cat('\n','expression analytique','\n')
+ ek(1,3) %*% ((expm::expm(St*(exp(Beta*x)-1)/Beta) %*% exit(St))/c(apha %*% expm::expm(St*(exp(Beta*x)-1)/Beta) %*% exit(St))) - ek(1,3) %*% (expm::expm(St*(exp(Beta*x)-1)/Beta) %*% rep(1,3))/c(apha %*% expm::expm(St*(exp(Beta*x)-1)/Beta) %*% rep(1,3))
+ 
+ ek(2,3) %*% ((expm::expm(St*(exp(Beta*x)-1)/Beta) %*% exit(St))/c(apha %*% expm::expm(St*(exp(Beta*x)-1)/Beta) %*% exit(St))) - ek(2,3) %*% (expm::expm(St*(exp(Beta*x)-1)/Beta) %*% rep(1,3))/c(apha %*% expm::expm(St*(exp(Beta*x)-1)/Beta) %*% rep(1,3))
+ cat('\n','fonction grr','\n')
+ iota_k <- diag(1,3)[1:(3-1),] %>% matrix(ncol=3)
+ apply(iota_k,1,function(ik){f(ik,St,exit(St),x,Beta)/f(apha,St,exit(St),x,Beta)-g(ik,St,x,Beta)/g(apha,St,x,Beta)})
+
+#derivation numérique
+testd <- function(a1,a2,a3,t,St,Beta) {
+    Beta*t + log(c(a1,a2,a3) %*% expm::expm((exp(Beta*t)-1)/Beta * St) %*% exit(St))-log(sum(c(a1,a2,a3) %*% expm::expm((exp(Beta*t)-1)/Beta * St)) )
+    # sum(apha %*% expm::expm(S*t))
+    }
+cat('\n',"taux d'accroissement",'\n')
+h <- 1e-5
+(testd(apha[1]+h,apha[2],apha[3],x,St,Beta)-testd(apha[1],apha[2],apha[3],x,St,Beta))/h
+(testd(apha[1],apha[2]+h,apha[3],x,St,Beta)-testd(apha[1],apha[2],apha[3],x,St,Beta))/h
+cat('\n',"num deriv R",'\n')
+grad(testd,apha[1],a2=apha[2],a3=apha[3],t=x,St=St,Beta=Beta)
+grad(testd,apha[2],a1=apha[1],a3=apha[3],t=x,St=St,Beta=Beta)
+```
 ```{r}
 tdim <- 3*m-1
 nbeq <- 3*m
@@ -1160,14 +1340,80 @@ A4 <- matrix(c(rep(0,tdim-1),1),nrow=1)
 ui <- rbind(A0,-A1,A2,A3,A4)
 ci <- c(-1,rep(0,m-1),rep(0,m-1),rep(0,m),0)
 theta <- c(alpha,diag(S),ifelse(exit(S)[-m]==0,S[cbind(1:(nrow(S)-1), 2:ncol(S))]-1e-10,S[cbind(1:(nrow(S)-1), 2:ncol(S))]),beta)
-oppar <- constrOptim(theta=theta,f=loss,ui=ui,ci=ci,grad=NULL,control = list(maxit=1000),dimension=m)}else{
+oppar <- suppressWarnings(constrOptim(theta=theta,f=loss,ui=ui,ci=ci,grad=grr,control = list(maxit=500,reltol=1e-12),dimension=m,method="BFGS"))}else{
   theta <- c(S,beta)
   ui <- matrix(c(-1,0,0,1),byrow = T,ncol=2)
   ci <- c(0,0)
-  oppar <- constrOptim(theta=theta,f=loss2,ui=ui,ci=ci,grad=NULL,control = list(maxit=5000),dimension=m)
+  oppar <- constrOptim(theta=theta,f=loss,ui=ui,ci=ci,grad=NULL,control = list(maxit=500),dimension=m)
 }
 oppar
+
 ```
+
+
+```{r}
+
+
+
+
+h <- 1e-10
+cat('global','\n')
+loss(theta+rep(h,tdim),m)-loss(theta,m)
+sum(h*grad(loss,theta,dimension=m))
+sum(h*grr(theta,m))
+
+cat('pi_1','\n')
+(loss(theta+h*ek(1,tdim),m)-loss(theta,m))/h
+grad(loss,theta,dimension=m)[1]
+grr(theta,m)[1]
+
+cat('pi_2','\n')
+(loss(theta+h*ek(2,tdim),m)-loss(theta,m))/h
+grad(loss,theta,dimension=m)[2]
+grr(theta,m)[2]
+
+cat('pi_3','\n')
+(loss(theta+h*ek(3,tdim),m)-loss(theta,m))/h
+grad(loss,theta,dimension=m)[3]
+grr(theta,m)[3]
+
+cat('S_11','\n')
+(loss(theta+h*ek(m,tdim),m)-loss(theta,m))/h
+grad(loss,theta,dimension=m)[m]
+grr(theta,m)[m]
+
+cat('S_22','\n')
+(loss(theta+h*ek(m+1,tdim),m)-loss(theta,m))/h
+grad(loss,theta,dimension=m)[m+1]
+grr(theta,m)[m+1]
+
+cat('S_12','\n')
+(loss(theta+h*ek(2*m,tdim),m)-loss(theta,m))/h
+grad(loss,theta,dimension=m)[2*m]
+grr(theta,m)[2*m]
+
+cat('S_12','\n')
+(loss(theta+h*ek(2*m+1,tdim),m)-loss(theta,m))/h
+grad(loss,theta,dimension=m)[2*m+1]
+grr(theta,m)[2*m+1]
+
+cat('beta','\n')
+(loss(theta+h*ek(tdim,tdim),m)-loss(theta,m))/h
+grad(loss,theta,dimension=m)[tdim]
+grr(theta,m)[tdim]
+
+```
+
+```{r}
+(grr(theta,m) - grad(loss,theta,dimension=m) ) %>% plot
+```
+
+
+
+```{r}
+grr(oppar$par,dimension=m) %>% plot
+```
+
 
 ```{r}
 # if (length(alpha)>1){
@@ -1201,10 +1447,23 @@ parlist <- retpar(oppar$par,m)
 ```{r}
 x10 <- IPH(PH(alpha = parlist$alpha,S=parlist$S),gfun="gompertz",gfunpars = parlist$beta)
 
+loss(c(x10@pars$alpha[1:(m-1)],diag(x10@pars$S),x10@pars$S[cbind(1:(nrow(x10@pars$S)-1), 2:ncol(x10@pars$S))],x10@gfun$pars),m)
+
 x10@fit$obs <- y
 
-plot(x10,type="haz",f="log",hch=highchart() %>% hc_add_series(donnees_ajust,"scatter",hcaes(x=Age+0.5,y=log(mux)),name="Observé"))  
-  
+# x10@pars$alpha <- c(1,0,0,0)
+# 
+# x10@pars$S[1,1] <- -10
+# x10@pars$S[1,2] <-  0.01
+# x10@pars$S[2,2] <- -0.4
+# x10@pars$S[2,3] <- 0.0004
+# x10@pars$S[3,3] <- -0.001
+# x10@pars$S[4,4] <- -0.01
+
+loss(c(x10@pars$alpha[1:(m-1)],diag(x10@pars$S),x10@pars$S[cbind(1:(nrow(x10@pars$S)-1), 2:ncol(x10@pars$S))],x10@gfun$pars),m)
+
+plot(x10,type="haz",f="log",hch=highchart() %>% hc_add_series(donnees_ajust,"scatter",hcaes(x=Age+0.5,y=log(mux)),name="Observé"))
+
 ```
 
 ```{r}
@@ -1375,11 +1634,11 @@ loss2(c(alpha,diag(S),S[cbind(1:(nrow(S)-1), 2:ncol(S))],beta))
 ## Fonction ajustement
 
 ```{r}
-ajustement <- function(x,y,weight,stepsEM=1000,scale=100,maxit=1000,every=1){
+ajustement <- function(x,y,weight,stepsEM=1000,scale=100,maxit=1000,every=1,reltol=1e-20){
   
   m <- length(x@pars$alpha)
   
-  x_fit1 <- fit(x, y, weight=weight, stepsEM = stepsEM,every=every,scale=scale)
+  x_fit1 <- fit(x, y, weight=weight, stepsEM = stepsEM,every=every,scale=scale,reltol=reltol)
   alpha <- x_fit1@pars$alpha[1:(m-1)]
   beta <- x_fit1@gfun$pars
   S <- x_fit1@pars$S
@@ -1396,7 +1655,7 @@ ajustement <- function(x,y,weight,stepsEM=1000,scale=100,maxit=1000,every=1){
   ui <- rbind(A0,-A1,A2,A3,A4)
   ci <- c(-1,rep(0,m-1),rep(0,m-1),rep(0,m),0)
   theta <- c(alpha,diag(S),ifelse(exit(S)[-m]==0,S[cbind(1:(nrow(S)-1), 2:ncol(S))]-1e-10,S[cbind(1:(nrow(S)-1), 2:ncol(S))]),beta)
-  oppar <- suppressWarnings(constrOptim(theta=theta,f=loss,ui=ui,ci=ci,grad=NULL,control = list(maxit=maxit),dimension=m))}else{
+  oppar <- suppressWarnings(constrOptim(theta=theta,f=loss,ui=ui,ci=ci,grad=grr,control = list(maxit=maxit,reltol=1e-10),dimension=m))}else{
     theta <- c(S,beta)
     ui <- matrix(c(-1,0,0,1),byrow = T,ncol=2)
     ci <- c(0,0)
@@ -1414,12 +1673,12 @@ ajustement <- function(x,y,weight,stepsEM=1000,scale=100,maxit=1000,every=1){
 ```
 
 ```{r}
-m <- 4
+m <- 3
 set.seed(1)
 weights <- (donnees_ajust %>% pull(dx))/100000
 y <- (donnees_ajust %>% pull(Age)) + 0.5
 x1 <- IPH(PH(structure = "coxienne généralisée" , dimension = m),gfun="gompertz",gfunpars = c(beta=1))
-ajust <- ajustement(x1, y, weight=weights, stepsEM = 20,every=1,scale=100,maxit=5000)
+ajust <- ajustement(x1, y, weight=weights, stepsEM = 100000,every=1,scale=100,maxit=100,reltol=1e-5)
 ```
 
 ```{r}
@@ -1427,25 +1686,27 @@ plot(ajust$modele,type="haz",f="log",hch=highchart() %>% hc_add_series(donnees_a
 ```
 
 ```{r}
-library(parallel)
+# library(parallel)
+# 
+# num_cores <- detectCores()
+# 
+# 
+# cl <- makeCluster(num_cores)
+# 
+# clusterExport(cl,list("y","weights","ajustement","loss","donnees_ajust","retpar","grr","ek"),envir = environment())
+# clusterEvalQ(cl,source("C:/Users/aper/Documents/PH.R"))
+# 
+# 
+# Ajustements <-  parLapply(cl, 1:20, function(k) {
+#   x1 <- IPH(PH(structure = "coxienne généralisée" , dimension = k),gfun="gompertz",gfunpars = c(beta=1))
+#   aj <- ajustement(x1, y, weight=weights, stepsEM = 10000000,every=1,scale=100,reltol=1e-5)
+# return(aj)
+# })
+# 
+# stopCluster(cl)
+# save(Ajustements,file="Ajustements.RData")
 
-num_cores <- detectCores()
-
-
-cl <- makeCluster(num_cores)
-
-clusterExport(cl,list("y","weights","ajustement","loss","donnees_ajust","retpar"),envir = environment())
-clusterEvalQ(cl,source("C:/Users/aper/Documents/PH.R"))
-
-
-Ajustements <-  parLapply(cl, 1:20, function(k) {
-  x1 <- IPH(PH(structure = "coxienne généralisée" , dimension = k),gfun="gompertz",gfunpars = c(beta=1))
-aj <- ajustement(x1, y, weight=weights, stepsEM = 10000,every=1,scale=100)
-return(aj)
-})
-
-stopCluster(cl)
-
+load(file="C:/Users/aper/Documents/PH/Ajustements.RData")
 ```
 
 ```{r}
@@ -1461,33 +1722,68 @@ sapply(Ajustements,function(ajust) (ajust[[2]]))
 \
 
 ```{r}
-num_cores <- detectCores()
+# num_cores <- detectCores()
+# 
+# 
+# cl <- makeCluster(num_cores)
+# 
+# clusterExport(cl,list("y","weights","ajustement","loss","donnees_ajust","retpar"),envir = environment())
+# clusterEvalQ(cl,source("C:/Users/aper/Documents/PH.R"))
+# 
+# # vec <- c(1,seq(10,100,10),1000,2000)
+# # vec <- c(1,seq(10,100,10),seq(1000,5000,500))
+# # vec <- 1:10
+# vec <- seq(5000,20000,5000)
+# 
+# Ajustements2 <-  parLapply(cl,vec , function(k) {
+#   x1 <- IPH(PH(structure = "coxienne généralisée" , dimension = 3),gfun="gompertz",gfunpars = c(beta=1))
+# aj <- ajustement(x1, y, weight=weights, stepsEM = k,every=1,scale=100)
+# return(aj)
+# })
+# 
+# stopCluster(cl)
+# ```
 
-
-cl <- makeCluster(num_cores)
-
-clusterExport(cl,list("y","weights","ajustement","loss","donnees_ajust","retpar"),envir = environment())
-clusterEvalQ(cl,source("C:/Users/aper/Documents/PH.R"))
-
-# vec <- c(1,seq(10,100,10),1000,2000)
-# vec <- seq(1000,5000,500)
-vec <- 1:10
-
-Ajustements2 <-  parLapply(cl,vec , function(k) {
-  x1 <- IPH(PH(structure = "coxienne généralisée" , dimension = 10),gfun="gompertz",gfunpars = c(beta=1))
-aj <- ajustement(x1, y, weight=weights, stepsEM = k,every=1,scale=100)
-return(aj)
-})
-
-stopCluster(cl)
+```{r}
+# sapply(Ajustements2,function(ajust) print(plot(ajust[[1]],type="haz",f="log",hch=highchart() %>% hc_add_series(donnees_ajust,"scatter",hcaes(x=Age+0.5,y=log(mux)),name="Observé"))) )
 ```
 
 ```{r}
-sapply(Ajustements2,function(ajust) print(plot(ajust[[1]],type="haz",f="log",hch=highchart() %>% hc_add_series(donnees_ajust,"scatter",hcaes(x=Age+0.5,y=log(mux)),name="Observé"))) )
+# sapply(Ajustements2,function(ajust) (ajust[[2]])) %>% plot
+```
+
+
+
+```{r}
+# num_cores <- detectCores()
+# 
+# 
+# cl <- makeCluster(num_cores)
+# 
+# clusterExport(cl,list("y","weights","ajustement","loss","donnees_ajust","retpar"),envir = environment())
+# clusterEvalQ(cl,source("C:/Users/aper/Documents/PH.R"))
+# 
+# 
+# vec <- 1:10
+# 
+# 
+# Ajustements2 <-  parLapply(cl,vec , function(k) {
+#   set.seed(k)
+#   x1 <- IPH(PH(structure = "coxienne généralisée" , dimension = 5),gfun="gompertz",gfunpars = c(beta=1))
+# aj <- ajustement(x1, y, weight=weights, stepsEM = 1000,every=1,scale=100)
+# return(aj)
+# })
+# 
+# stopCluster(cl)
+
 ```
 
 ```{r}
-sapply(Ajustements2,function(ajust) (ajust[[2]])) %>% plot
+# sapply(Ajustements2,function(ajust) print(plot(ajust[[1]],type="haz",f="log",hch=highchart() %>% hc_add_series(donnees_ajust,"scatter",hcaes(x=Age+0.5,y=log(mux)),name="Observé"))) )
+```
+
+```{r}
+# sapply(Ajustements2,function(ajust) (ajust[[2]])) %>% plot
 ```
 
 \
@@ -1598,7 +1894,7 @@ donnees_ajust <- donnees_ajust %>% rbind(donnees_ajust2)
 ```
 
 ```{r}
-m <- 2
+m <- 5
 set.seed(1)
 x2 <- IPH(PH(structure = "coxienne généralisée" , dimension = m),gfun="gompertz")
 weights <- (donnees_ajust %>% pull(dx))/100000
@@ -1606,7 +1902,21 @@ y <- (donnees_ajust %>% pull(Age)) + 0.5
 x2@fit <- list(weights=weights,obs=y)
 set.seed(1)
 covariates <- tibble(y=y,intercept=rep(1,dim(donnees_ajust)[1]),sexe=ifelse(donnees_ajust$Sexe=="F",1,0))
-x_reg <- reg(x2, y ~ intercept + sexe  ,data=covariates, weight=weights, stepsEM = 1,every=1,scale=100)
+x_reg <- reg(x2, y ~ intercept + sexe  ,data=covariates, weight=weights, stepsEM = 1000,every=1,scale=100)
+```
+```{r}
+m <- 5
+set.seed(1)
+x2 <- IPH(PH(structure = "coxienne généralisée" , dimension = m),gfun="gompertz")
+weights <- (donnees_ajust %>% pull(dx))/100000
+y <- (donnees_ajust %>% pull(Age)) + 0.5
+x2@fit <- list(weights=weights,obs=y)
+set.seed(1)
+covariates <- tibble(y=y,sexe=ifelse(donnees_ajust$Sexe=="F",1,0))
+x_reg <- reg(x2, y ~  sexe  ,data=covariates, weight=weights, stepsEM = 2,every=1,scale=10000)
+```
+```{r}
+xF <- evaluate(x_reg,1)
 ```
 
 ```{r}
@@ -1619,6 +1929,11 @@ curve(dens(x_reg,x,X[1:111,]),col='red',add=T)
 ```{r}
 plot(y[112:length(y)],weights[112:length(y)])
 curve(dens(x_reg,x,X[112:length(y),]),col='red',add=T)
+```
+```{r}
+plot(y,weights)
+curve(dens(x_reg,x,X[1:111,]),col='red',add=T)
+curve(dens(x_reg,x,X[112:length(y),]),col='green',add=T)
 ```
 
 ```{r}
@@ -1679,7 +1994,7 @@ nbeq <- 3*m+2
   ui <- rbind(A0,-A1,A2,A3,A4)
   ci <- c(-1,rep(0,m-1),rep(0,m-1),rep(0,m),0)
   parametres <- c(alpha,diag(S),ifelse(exit(S)[-m]==0,S[cbind(1:(nrow(S)-1), 2:ncol(S))]-1e-10,S[cbind(1:(nrow(S)-1), 2:ncol(S))]),beta,theta)
-  oppar <- suppressWarnings(constrOptim(theta=parametres,f=loss2,ui=ui,ci=ci,grad=NULL,control = list(maxit=500),dimension=m,X=X))
+  oppar <- suppressWarnings(constrOptim(theta=parametres,f=loss2,ui=ui,ci=ci,grad=NULL,control = list(maxit=100),dimension=m,X=X))
 ```
 
 ```{r}
